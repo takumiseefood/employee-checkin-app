@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>員工打卡</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#2f6fed" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav">
+    <h1>員工打卡</h1>
+    <a href="admin.html">管理者後台</a>
+  </div>
+
+  <div id="bindCard" class="card hidden">
+    <p style="margin-top:0;color:#666;font-size:13px;">首次使用需綁定裝置，之後此裝置即代表你本人打卡，如需更換裝置請聯繫管理者。</p>
+    <div class="field">
+      <label>員工編號</label>
+      <input id="bindNo" placeholder="例如 A0012" />
+    </div>
+    <div class="field">
+      <label>員工姓名</label>
+      <input id="bindName" placeholder="請輸入姓名" />
+    </div>
+    <button class="btn-primary" onclick="bindDevice()">綁定裝置</button>
+    <div id="bindMsg" class="msg"></div>
+  </div>
+
+  <div id="mainCard" class="card hidden">
+    <div class="field">
+      <label>員工編號</label>
+      <input id="empNoDisplay" disabled />
+    </div>
+    <div class="field">
+      <label>員工姓名</label>
+      <input id="empNameDisplay" disabled />
+    </div>
+    <div class="date" id="dateLine"></div>
+    <div class="clock" id="clock">--:--:--</div>
+
+    <div class="btn-grid">
+      <button class="btn-punch btn-checkin" id="btnCheckin" onclick="doPunch('check-in')">上班打卡</button>
+      <button class="btn-punch btn-break" id="btnBreak" onclick="doPunch(breakNextType())">休息打卡</button>
+      <button class="btn-punch btn-checkout" id="btnCheckout" onclick="doPunch('check-out')">下班打卡</button>
+      <button class="btn-punch btn-forgot" onclick="toggleForgot()">忘記打卡（補登申請）</button>
+    </div>
+
+    <div id="verifyLine" class="status-line">正在偵測位置 / 網路…</div>
+    <div id="punchMsg" class="msg"></div>
+  </div>
+
+  <div id="forgotCard" class="card hidden">
+    <h3 style="margin-top:0;">忘記打卡補登申請</h3>
+    <div class="field">
+      <label>打卡類型</label>
+      <select id="forgotType">
+        <option value="check-in">上班打卡</option>
+        <option value="break-start">休息開始</option>
+        <option value="break-end">休息結束</option>
+        <option value="check-out">下班打卡</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>實際時間</label>
+      <input id="forgotTime" type="datetime-local" />
+    </div>
+    <div class="field">
+      <label>原因</label>
+      <textarea id="forgotReason" rows="2" placeholder="例如：手機沒電、忘記帶手機…"></textarea>
+    </div>
+    <button class="btn-primary" onclick="submitForgot()">送出補登申請</button>
+    <button class="btn-secondary" style="width:100%;margin-top:8px;" onclick="toggleForgot()">取消</button>
+    <div id="forgotMsg" class="msg"></div>
+  </div>
+
+  <div id="historyCard" class="card hidden">
+    <div class="topnav">
+      <h3 style="margin:0;">查詢打卡記錄</h3>
+      <a href="#" onclick="loadHistory();return false;">重新整理</a>
+    </div>
+    <div id="historyList" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
