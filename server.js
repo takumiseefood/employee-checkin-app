@@ -298,7 +298,7 @@ addRoute('GET', '/api/status', async (req, res, params, query) => {
 addRoute('POST', '/api/admin/login', async (req, res) => {
     const ip = getClientIp(req);
     if (auth.isLockedOut(ip)) {
-          return sendJSON(res, 429, { error: '登入失敗次數過多，請 1 分鐘後再試' });
+          return sendJSON(res, 429, { error: '登入失敗次數過多（請 1 分鐘後再試' });
     }
     const { username, password } = await readBody(req);
     if (!username || !password) return sendJSON(res, 400, { error: '請輸入帳�陟密碼' });
@@ -425,7 +425,7 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     const sheetName = process.env.GOOGLE_SHEET_TAB || '打卡記錄';
     if (!spreadsheetId) {
-          return sendJSON(res, 500, { error: '伺服器尚未设定 GOOGLE_SHEET_ID 環境變數' });
+          return sendJSON(res, 500, { error: '伺服器尚未設定 GOOGLE_SHEET_ID 環境變數' });
     }
 
     try {
@@ -446,6 +446,21 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
           sendJSON(res, 200, { ok: true, exported: rows.length, message: `已匯出 ${rows.length} 筆打卡紀錄到 Google Sheet「${sheetName}」分頁` });
     } catch (e) {
           sendJSON(res, 500, { error: '匯出到 Google Sheet 失敗：' + e.message });
+    }
+});
+
+// 暫時性工具：例躦表最後一列之後插入新資料列，之後會移除歡路由
+addRoute('POST', '/api/admin/sheet-clear-rows', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const { range } = await readBody(req);
+    if (!range) return sendJSON(res, 400, { error: '缺少 range 參數' });
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+    if (!spreadsheetId) return sendJSON(res, 500, { error: '伺服器尚未設定 GOOGLE_SHEET_ID 環境變數' });
+    try {
+          await sheetsApi.clearValues(spreadsheetId, range);
+          sendJSON(res, 200, { ok: true, message: `已清除範圍 ${range}` });
+    } catch (e) {
+          sendJSON(res, 500, { error: '清除失敗：' + e.message });
     }
 });
 
