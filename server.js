@@ -449,21 +449,6 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
     }
 });
 
-// 暫時性工具：例躦表最後一列之後插入新資料列，之後會移除歡路由
-addRoute('POST', '/api/admin/sheet-clear-rows', async (req, res) => {
-    if (!requireAdmin(req, res)) return;
-    const { range } = await readBody(req);
-    if (!range) return sendJSON(res, 400, { error: '缺少 range 參數' });
-    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-    if (!spreadsheetId) return sendJSON(res, 500, { error: '伺服器尚未設定 GOOGLE_SHEET_ID 環境變數' });
-    try {
-          await sheetsApi.clearValues(spreadsheetId, range);
-          sendJSON(res, 200, { ok: true, message: `已清除範圍 ${range}` });
-    } catch (e) {
-          sendJSON(res, 500, { error: '清除失敗：' + e.message });
-    }
-});
-
 const MIME = {
     '.html': 'text/html; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8',
