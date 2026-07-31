@@ -163,7 +163,7 @@ async function loadForgotRequests() {
     const r = await api('/api/admin/forgot-requests?status=pending_approval');
     const data = await r.json();
     if (!data.records.length) {
-      el.innerHTML = '<p style="color:#999;font-size:13px;">目前沒有待審核的補登申請</p>';
+      el.innerHTML = '<p style="color:var(--text-faint);font-size:13px;">目前沒有待審核的補登申請</p>';
       return;
     }
     el.innerHTML = data.records
@@ -226,7 +226,7 @@ async function loadSuspicious() {
     const r = await api('/api/admin/suspicious-punches');
     const data = await r.json();
     if (!data.records.length) {
-      el.innerHTML = '<p style="color:#999;font-size:13px;">目前沒有可疑定位記錄</p>';
+      el.innerHTML = '<p style="color:var(--text-faint);font-size:13px;">目前沒有可疑定位記錄</p>';
       return;
     }
     el.innerHTML = data.records
