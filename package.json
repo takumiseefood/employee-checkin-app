@@ -1,0 +1,13 @@
+{
+    "name": "employee-checkin-app",
+    "version": "1.0.0",
+    "description": "employee checkin system",
+    "main": "server.js",
+    "engines": {
+          "node": "22.x"
+    },
+    "scripts": {
+          "start": "node server.js"
+    },
+    "dependencies": {}
+}
