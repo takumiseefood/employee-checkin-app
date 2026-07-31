@@ -80,6 +80,38 @@
   </div>
 
   <div class="card">
+    <h3 style="margin-top:0;">匯出打卡記錄到 Google Sheet</h3>
+    <p style="font-size:12px;color:#888;">
+      匯出結果會寫入公司帳本試算表的「打卡記錄」分頁。可篩選特定員工與時間範圍，不選則匯出全部員工、全部時間（預設不含已拒絕的補登申請）。
+    </p>
+    <div class="field">
+      <label>員工</label>
+      <select id="exportEmployee">
+        <option value="">全部員工</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>起始日期（含當天）</label>
+      <input id="exportFrom" type="date" />
+    </div>
+    <div class="field">
+      <label>結束日期（含當天）</label>
+      <input id="exportTo" type="date" />
+    </div>
+    <div class="field">
+      <label>狀態</label>
+      <select id="exportStatus">
+        <option value="">全部（不含已拒絕）</option>
+        <option value="confirmed">僅已確認</option>
+        <option value="pending_approval">僅待審核</option>
+        <option value="rejected">僅已拒絕</option>
+      </select>
+    </div>
+    <button class="btn-primary" onclick="exportToSheet()">匯出到 Google Sheet</button>
+    <div id="exportMsg" class="msg"></div>
+  </div>
+
+  <div class="card">
     <h3 style="margin-top:0;">待審核的忘記打卡申請</h3>
     <div id="forgotList">載入中…</div>
   </div>
