@@ -442,8 +442,33 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
                 r.verify_detail || r.reason || '',
                 exportedAt,
           ]);
-          await sheetsApi.appendRows(spreadsheetId, sheetName, values);
-          sendJSON(res, 200, { ok: true, exported: rows.length, message: `已匯出 ${rows.length} 筆打卡紀錄到 Google Sheet「${sheetName}」分頁` });
+
+          // 依員工分區排序：先出無有資料列，與本次新匯出的資料合併後，
+          // 先依「員工編號��後再侞「打卡時間」排序，整段覆庫回韥表，
+          // 讓同一人的打卡記錄集中排列在連續的區塊，方便辨谘。
+          const existing = await sheetsApi.getValues(spreadsheetId, `${sheetName}!A2:I`);
+          const padRow = (r) => {
+                const row = (r || []).slice(0, 9);
+                while (row.length < 9) row.push('');
+                return row;
+          };
+          const existingRows = ((existing.values || [])).filter((r) => r && r[0]).map(padRow);
+          const merged = existingRows.concat(values.map(padRow));
+          merged.sort((a, b) => {
+                const empCompare = String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true });
+                if (empCompare !== 0) return empCompare;
+                return String(a[4]).localeCompare(String(b[4]));
+          });
+
+          await sheetsApi.ensureSheetRowCount(spreadsheetId, sheetName, merged.length + 1);
+          const writeRange = `${sheetName}!A2:I${merged.length + 1}`;
+          await sheetsApi.updateValues(spreadsheetId, writeRange, merged);
+
+          sendJSON(res, 200, {
+                ok: true,
+                exported: rows.length,
+                message: `已匯出 ${rows.length} 筆打卡紀錄到 Google Sheet「${sheetName}」分頁，並依員工分區整理排序`,
+          });
     } catch (e) {
           sendJSON(res, 500, { error: '匯出到 Google Sheet 失敗：' + e.message });
     }
