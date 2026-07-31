@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>打卡系統 · 管理者後台</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap wide">
+  <div class="topnav">
+    <h1>管理者後台</h1>
+    <a href="index.html">回員工打卡頁</a>
+  </div>
+
+  <div id="loginCard" class="card hidden">
+    <h3 style="margin-top:0;">管理者登入</h3>
+    <div class="field">
+      <label>帳號</label>
+      <input id="loginUsername" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label>密碼</label>
+      <input id="loginPassword" type="password" autocomplete="current-password" />
+    </div>
+    <button class="btn-primary" onclick="login()">登入</button>
+    <div id="loginMsg" class="msg"></div>
+    <p style="font-size:12px;color:#888;margin-top:10px;">
+      首次啟動伺服器時會在終端機印出隨機產生的初始密碼，同時寫入 data/INITIAL_ADMIN_PASSWORD.txt，
+      登入後請立即在下方「變更密碼」區塊改成自己的密碼。
+    </p>
+  </div>
+
+  <div id="adminContent" class="hidden">
+  <div class="topnav" style="margin-bottom:10px;">
+    <span style="font-size:13px;color:#666;">已登入：<strong id="whoami"></strong></span>
+    <a href="#" onclick="logout();return false;">登出</a>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">變更密碼</h3>
+    <div class="field">
+      <label>目前密碼</label>
+      <input id="curPassword" type="password" />
+    </div>
+    <div class="field">
+      <label>新密碼（至少 8 碼）</label>
+      <input id="newPassword" type="password" />
+    </div>
+    <button class="btn-secondary" onclick="changePassword()">更新密碼</button>
+    <div id="pwMsg" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">打卡範圍設定</h3>
+    <div class="field">
+      <label>中心點緯度 (lat)</label>
+      <input id="cfgLat" type="number" step="0.000001" />
+    </div>
+    <div class="field">
+      <label>中心點經度 (lng)</label>
+      <input id="cfgLng" type="number" step="0.000001" />
+    </div>
+    <button class="btn-secondary" onclick="useCurrentLocation()">使用目前所在位置</button>
+    <div class="field" style="margin-top:12px;">
+      <label>允許半徑（公里）</label>
+      <input id="cfgRadius" type="number" step="0.1" />
+    </div>
+    <div class="field">
+      <label>允許的公司 WiFi 出口 IP（每行一個，見下方說明）</label>
+      <textarea id="cfgIPs" rows="4" placeholder="例如 203.0.113.5"></textarea>
+    </div>
+    <p style="font-size:12px;color:#888;">
+      瀏覽器基於安全限制無法讀取裝置連接的 WiFi SSID/BSSID，因此以「員工連上公司 WiFi 後對外的公用 IP（或內網閘道 IP）」
+      作為近似驗證方式。此 IP 通常固定，可請 IT 提供公司網路的對外 IP 並填入此處。若需要更嚴謹的 SSID/BSSID 驗證，需改用原生 App
+      並透過作業系統的 WiFi 資訊 API 取得（詳見 README）。
+    </p>
+    <button class="btn-primary" onclick="saveConfig()">儲存設定</button>
+    <div id="cfgMsg" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">待審核的忘記打卡申請</h3>
+    <div id="forgotList">載入中…</div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">員工與裝置綁定狀態</h3>
+    <table id="empTable">
+      <thead><tr><th>員工編號</th><th>姓名</th><th>裝置綁定</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">可疑定位標記（供人工複查）</h3>
+    <p style="font-size:12px;color:#888;">
+      伺服器對 GPS accuracy 值做簡單啟發式判斷（如精確度剛好為 0～1 公尺這種不合理的完美數值）標記可疑，
+      但瀏覽器 Web API 無法可靠偵測模擬定位 App，這裡僅供輔助複查，不代表一定是造假。
+    </p>
+    <div id="suspiciousList">載入中…</div>
+  </div>
+  </div>
+</div>
+
+<script src="admin.js"></script>
+</body>
+</html>
