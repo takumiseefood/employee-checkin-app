@@ -128,6 +128,35 @@ async function saveConfig() {
   }
 }
 
+async function exportToSheet() {
+  const employeeNo = document.getElementById('exportEmployee').value;
+  const from = document.getElementById('exportFrom').value;
+  const to = document.getElementById('exportTo').value;
+  const status = document.getElementById('exportStatus').value;
+  const msg = document.getElementById('exportMsg');
+  msg.textContent = '匯出中…';
+  msg.className = 'msg';
+  try {
+    const r = await api('/api/admin/export-to-sheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employeeNo: employeeNo || undefined,
+        from: from || undefined,
+        to: to || undefined,
+        status: status || undefined,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || '匯出失敗');
+    msg.textContent = data.message || `已匯出 ${data.exported} 筆`;
+    msg.className = 'msg ok';
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.className = 'msg err';
+  }
+}
+
 async function loadForgotRequests() {
   const el = document.getElementById('forgotList');
   try {
@@ -173,6 +202,15 @@ async function loadEmployees() {
         </tr>`
       )
       .join('');
+
+    const exportSelect = document.getElementById('exportEmployee');
+    const prevValue = exportSelect.value;
+    exportSelect.innerHTML =
+      '<option value="">全部員工</option>' +
+      data.employees
+        .map((e) => `<option value="${e.employeeNo}">${e.name}（${e.employeeNo}）</option>`)
+        .join('');
+    exportSelect.value = prevValue;
   } catch (e) { /* 401 已導回登入頁 */ }
 }
 
