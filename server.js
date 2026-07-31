@@ -289,7 +289,7 @@ addRoute('GET', '/api/status', async (req, res, params, query) => {
     const rows = db
       .prepare(
               "SELECT * FROM punches WHERE employee_no = ? AND status = 'confirmed' AND timestamp LIKE ? ORDER BY timestamp ASC"
-            )
+           ")
       .all(employeeNo, todayStr() + '%');
     const last = rows[rows.length - 1];
     sendJSON(res, 200, { ok: true, lastType: last ? last.type : null, lastAt: last ? last.timestamp : null });
@@ -471,21 +471,6 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
           });
     } catch (e) {
           sendJSON(res, 500, { error: '匯出到 Google Sheet 失敗：' + e.message });
-    }
-});
-
-// 暫時性工具：歵滤資算表中指定翄圍的內容　（用於移除渥顫正算，之後會移除此路由）
-addRoute('POST', '/api/admin/sheet-clear-rows', async (req, res) => {
-    if (!requireAdmin(req, res)) return;
-    const { range } = await readBody(req);
-    if (!range) return sendJSON(res, 400, { error: '缺少 range 參數' });
-    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-    if (!spreadsheetId) return sendJSON(res, 500, { error: '伺服器尚未設定 GOOGLE_SHEET_ID 環境變數' });
-    try {
-          await sheetsApi.clearValues(spreadsheetId, range);
-          sendJSON(res, 200, { ok: true, message: `已清除範圍 ${range}` });
-    } catch (e) {
-          sendJSON(res, 500, { error: '清除失敗：' + e.message });
     }
 });
 
