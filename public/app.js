@@ -88,7 +88,7 @@ function startLocationWatch() {
       line.textContent = `已取得定位（精確度約 ${Math.round(pos.coords.accuracy)} 公尺），打卡時將由伺服器驗證是否在範圍內`;
     },
     (err) => {
-      line.textContent = '無法取得定位（' + err.message + '），請確認已開啟定位權限，或改連接公司 WiFi';
+      line.textContent = '無法取得定位（' + err.message + '），請確認%��開啟定位權限，或改連接公司 WiFi';
     },
     { enableHighAccuracy: true, maximumAge: 10000, timeout: 8000 }
   );
@@ -205,7 +205,7 @@ async function loadHistory() {
   const data = await r.json();
   const list = document.getElementById('historyList');
   if (!data.records.length) {
-    list.innerHTML = '<p style="color:#999;font-size:13px;">尚無打卡記錄</p>';
+    list.innerHTML = '<p style="color:var(--text-faint);font-size:13px;">尚無打卡記錄</p>';
     return;
   }
   list.innerHTML = data.records
