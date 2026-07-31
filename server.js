@@ -27,8 +27,8 @@ function distanceKm(lat1, lng1, lat2, lng2) {
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
     const dLng = ((lng2 - lng1) * Math.PI) / 180;
     const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -42,11 +42,37 @@ function todayStr(d = new Date()) {
     return d.toISOString().slice(0, 10);
 }
 
+// 班表時間換算：以公司所在時區（Asia/Taipei, UTC+8）的實際打卡時鐘為準，
+// 每小時 11~40 分登錄為該小時的 30 分，41 分~下個整點 10 分登錄為下個整點。
+function pad2(n) {
+    return String(n).padStart(2, '0');
+}
+
+function computeScheduleTime(isoTimestamp) {
+    const TZ_OFFSET_MS = 8 * 60 * 60 * 1000; // Asia/Taipei，固定 UTC+8，無日光節約
+    const d = new Date(isoTimestamp);
+    const local = new Date(d.getTime() + TZ_OFFSET_MS);
+    const bucket = new Date(
+          Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), local.getUTCHours(), 0, 0, 0)
+        );
+    const m = local.getUTCMinutes();
+    if (m <= 10) {
+          // 維持整點
+    } else if (m <= 40) {
+          bucket.setUTCMinutes(30);
+    } else {
+          bucket.setUTCMinutes(60); // 自動進位到下一個整點（含跨小時/跨日）
+    }
+    return `${bucket.getUTCFullYear()}-${pad2(bucket.getUTCMonth() + 1)}-${pad2(bucket.getUTCDate())} ${pad2(
+          bucket.getUTCHours()
+        )}:${pad2(bucket.getUTCMinutes())}`;
+}
+
 function getAdminConfig() {
     const row = db.prepare('SELECT * FROM admin_config WHERE id = 1').get();
     return {
-        geofence: { lat: row.lat, lng: row.lng, radiusKm: row.radius_km },
-        allowedIPs: JSON.parse(row.allowed_ips),
+          geofence: { lat: row.lat, lng: row.lng, radiusKm: row.radius_km },
+          allowedIPs: JSON.parse(row.allowed_ips),
     };
 }
 
@@ -54,7 +80,7 @@ function verifyDevice(employeeNo, deviceId) {
     const emp = db.prepare('SELECT * FROM employees WHERE employee_no = ?').get(employeeNo);
     if (!emp) return { ok: false, error: '查無此員工編號，請先綁定裝置' };
     if (emp.device_id !== deviceId) {
-        return { ok: false, error: '裝置未綁定或與登記裝置不符，請聯繫管理者' };
+          return { ok: false, error: '裝置未綁定或與登記裝置不符，請聯繫管理者' };
     }
     return { ok: true, emp };
 }
@@ -63,38 +89,38 @@ function verifyLocationOrNetwork(req, lat, lng, accuracy) {
     const { geofence, allowedIPs } = getAdminConfig();
     const clientIp = getClientIp(req);
 
-const suspicious =
-    typeof accuracy === 'number' && (accuracy <= 0 || (accuracy === Math.floor(accuracy) && accuracy <= 1));
+  const suspicious =
+        typeof accuracy === 'number' && (accuracy <= 0 || (accuracy === Math.floor(accuracy) && accuracy <= 1));
 
-if (Array.isArray(allowedIPs) && allowedIPs.includes(clientIp)) {
-    return { ok: true, method: 'wifi_ip', detail: `來源 IP ${clientIp} 在允許名單內（視為公司 WiFi）`, suspicious };
-}
+  if (Array.isArray(allowedIPs) && allowedIPs.includes(clientIp)) {
+        return { ok: true, method: 'wifi_ip', detail: `來源 IP ${clientIp} 在允許名單內（視為公司 WiFi）`, suspicious };
+  }
 
-if (typeof lat === 'number' && typeof lng === 'number') {
-    const dist = distanceKm(lat, lng, geofence.lat, geofence.lng);
-    if (dist <= geofence.radiusKm) {
+  if (typeof lat === 'number' && typeof lng === 'number') {
+        const dist = distanceKm(lat, lng, geofence.lat, geofence.lng);
+        if (dist <= geofence.radiusKm) {
+                return {
+                          ok: true,
+                          method: 'gps',
+                          detail: `距離指定地點 ${dist.toFixed(2)} 公里`,
+                          distanceKm: dist,
+                          suspicious,
+                };
+        }
         return {
-            ok: true,
-            method: 'gps',
-            detail: `距離指定地點 ${dist.toFixed(2)} 公里`,
-            distanceKm: dist,
-            suspicious,
+                ok: false,
+                error: `不在允許範圍內（距離 ${dist.toFixed(2)} 公里，允許 ${geofence.radiusKm} 公里），也未偵測到公司 WiFi`,
+                distanceKm: dist,
         };
-    }
-    return {
-        ok: false,
-        error: `不在允許範圍內（距離 ${dist.toFixed(2)} 公里，允許 ${geofence.radiusKm} 公里），也未偵測到公司 WiFi`,
-        distanceKm: dist,
-    };
-}
+  }
 
-return { ok: false, error: '無法取得定位資訊，且未偵測到公司 WiFi，請開啟定位權限或連接公司網路' };
+  return { ok: false, error: '無法取得定位資訊，且未偵測到公司 WiFi，請開啟定位權限或連接公司網路' };
 }
 
 const PUNCH_TYPES = ['check-in', 'break-start', 'break-end', 'check-out'];
 const PUNCH_LABEL = {
     'check-in': '上班打卡',
-        'break-start': '休息開始',
+    'break-start': '休息開始',
     'break-end': '休息結束',
     'check-out': '下班打卡',
 };
@@ -111,24 +137,24 @@ const VERIFY_LABEL = {
     manual_request: '人工補登',
 };
 
-const SHEET_EXPORT_HEADER = ['員工編號', '姓名', '打卡類型', '打卡時間', '狀態', '驗證方式', '驗證/備註', '匯出時間'];
+const SHEET_EXPORT_HEADER = ['員工編號', '姓名', '打卡類型', '班表時間', '打卡時間', '狀態', '驗證方式', '驗證/備註', '匯出時間'];
 
 const routes = [];
 function addRoute(method, routePath, handler) {
     const keys = [];
     const pattern = new RegExp(
-        '^' +
-        routePath
-        .split('/')
-        .map((seg) => {
-            if (seg.startsWith(':')) {
-                keys.push(seg.slice(1));
-                return '([^/]+)';
-            }
-            return seg;
-        })
-        .join('/') +
-        '$'
+          '^' +
+            routePath
+              .split('/')
+              .map((seg) => {
+                          if (seg.startsWith(':')) {
+                                       keys.push(seg.slice(1));
+                                       return '([^/]+)';
+                          }
+                          return seg;
+              })
+              .join('/') +
+            '$'
         );
     routes.push({ method, pattern, keys, handler });
 }
@@ -141,17 +167,17 @@ function sendJSON(res, status, obj) {
 
 function readBody(req) {
     return new Promise((resolve, reject) => {
-        let data = '';
-        req.on('data', (chunk) => (data += chunk));
-        req.on('end', () => {
-            if (!data) return resolve({});
-            try {
-        resolve(JSON.parse(data));
-            } catch (e) {
-                reject(new Error('Invalid JSON body'));
-            }
-        });
-        req.on('error', reject);
+          let data = '';
+          req.on('data', (chunk) => (data += chunk));
+          req.on('end', () => {
+                  if (!data) return resolve({});
+                  try {
+                            resolve(JSON.parse(data));
+                  } catch (e) {
+                            reject(new Error('Invalid JSON body'));
+                  }
+          });
+          req.on('error', reject);
     });
 }
 
@@ -159,8 +185,8 @@ function requireAdmin(req, res) {
     const cookies = auth.parseCookies(req);
     const session = auth.getSession(cookies[auth.COOKIE_NAME]);
     if (!session) {
-        sendJSON(res, 401, { error: '請先登入管理者後台' });
-                        return null;
+          sendJSON(res, 401, { error: '請先登入管理者後台' });
+          return null;
     }
     return session;
 }
@@ -168,22 +194,22 @@ function requireAdmin(req, res) {
 addRoute('POST', '/api/bind', async (req, res) => {
     const { employeeNo, name, deviceId } = await readBody(req);
     if (!employeeNo || !name || !deviceId) {
-        return sendJSON(res, 400, { error: '缺少員工編號、姓名或裝置識別碼' });
+          return sendJSON(res, 400, { error: '缺少員工編號、姓名或裝置識別碼' });
     }
     const emp = db.prepare('SELECT * FROM employees WHERE employee_no = ?').get(employeeNo);
 
-         if (!emp) {
-             db.prepare('INSERT INTO employees (employee_no, name, device_id, bound_at) VALUES (?, ?, ?, ?)').run(
-                 employeeNo, name, deviceId, new Date().toISOString()
-                 );
-             return sendJSON(res, 200, { ok: true, employee: { employeeNo, name, deviceId }, message: '裝置綁定成功' });
-         }
+           if (!emp) {
+                 db.prepare('INSERT INTO employees (employee_no, name, device_id, bound_at) VALUES (?, ?, ?, ?)').run(
+                         employeeNo, name, deviceId, new Date().toISOString()
+                       );
+                 return sendJSON(res, 200, { ok: true, employee: { employeeNo, name, deviceId }, message: '裝置綁定成功' });
+           }
 
-         if (emp.device_id && emp.device_id !== deviceId) {
-             return sendJSON(res, 409, { error: '此員工編號已綁定其他裝置，如需更換裝置請聯繫管理者重設綁定' });
-         }
+           if (emp.device_id && emp.device_id !== deviceId) {
+                 return sendJSON(res, 409, { error: '此員工編號已碶帐其他裝置，如需更捛裝置請肯繫管理者重設綁定' });
+           }
 
-         db.prepare('UPDATE employees SET device_id = ?, name = ? WHERE employee_no = ?').run(deviceId, name, employeeNo);
+           db.prepare('UPDATE employees SET device_id = ?, name = ? WHERE employee_no = ?').run(deviceId, name, employeeNo);
     sendJSON(res, 200, { ok: true, employee: { employeeNo, name, deviceId }, message: '裝置已確認綁定' });
 });
 
@@ -191,58 +217,58 @@ addRoute('POST', '/api/punch', async (req, res) => {
     const { employeeNo, deviceId, type, lat, lng, accuracy } = await readBody(req);
     if (!PUNCH_TYPES.includes(type)) return sendJSON(res, 400, { error: '不支援的打卡類型' });
 
-         const dev = verifyDevice(employeeNo, deviceId);
+           const dev = verifyDevice(employeeNo, deviceId);
     if (!dev.ok) return sendJSON(res, 403, { error: dev.error });
 
-         const verify = verifyLocationOrNetwork(req, lat, lng, accuracy);
+           const verify = verifyLocationOrNetwork(req, lat, lng, accuracy);
     if (!verify.ok) return sendJSON(res, 403, { error: verify.error });
 
-         const id = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+           const id = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
     const timestamp = new Date().toISOString();
     db.prepare(`INSERT INTO punches
-    (id, employee_no, name, type, label, timestamp, verified_by, verify_detail, distance_km, status, location_suspicious)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)`
-               ).run(id, employeeNo, dev.emp.name, type, PUNCH_LABEL[type], timestamp, verify.method, verify.detail, verify.distanceKm || null, verify.suspicious ? 1 : 0);
+        (id, employee_no, name, type, label, timestamp, verified_by, verify_detail, distance_km, status, location_suspicious)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)`
+                 ).run(id, employeeNo, dev.emp.name, type, PUNCH_LABEL[type], timestamp, verify.method, verify.detail, verify.distanceKm || null, verify.suspicious ? 1 : 0);
 
-         sendJSON(res, 200, {
-             ok: true,
-             record: {
-                 id, employeeNo, name: dev.emp.name, type, label: PUNCH_LABEL[type], timestamp,
-                 verifiedBy: verify.method, verifyDetail: verify.detail, status: 'confirmed',
-             },
-         });
+           sendJSON(res, 200, {
+                 ok: true,
+                 record: {
+                         id, employeeNo, name: dev.emp.name, type, label: PUNCH_LABEL[type], timestamp,
+                         verifiedBy: verify.method, verifyDetail: verify.detail, status: 'confirmed',
+                 },
+           });
 });
 
 addRoute('POST', '/api/forgot-punch', async (req, res) => {
     const { employeeNo, deviceId, type, time, reason } = await readBody(req);
     if (!PUNCH_TYPES.includes(type)) return sendJSON(res, 400, { error: '不支援的打卡類型' });
-    if (!time || !reason) return sendJSON(res, 400, { error: '請填寫補登時間與原因' });
+    if (!time || !reason) return sendJSON(res, 400, { error: '請填寫補登時间與原因' });
 
-         const dev = verifyDevice(employeeNo, deviceId);
+           const dev = verifyDevice(employeeNo, deviceId);
     if (!dev.ok) return sendJSON(res, 403, { error: dev.error });
 
-         const id = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+           const id = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
     const timestamp = new Date(time).toISOString();
     const submittedAt = new Date().toISOString();
     db.prepare(`INSERT INTO punches
-    (id, employee_no, name, type, label, timestamp, verified_by, reason, status, submitted_at, location_suspicious)
-    VALUES (?, ?, ?, ?, ?, ?, 'manual_request', ?, 'pending_approval', ?, 0)`
-               ).run(id, employeeNo, dev.emp.name, type, PUNCH_LABEL[type], timestamp, reason, submittedAt);
+        (id, employee_no, name, type, label, timestamp, verified_by, reason, status, submitted_at, location_suspicious)
+            VALUES (?, ?, ?, ?, ?, ?, 'manual_request', ?, 'pending_approval', ?, 0)`
+                 ).run(id, employeeNo, dev.emp.name, type, PUNCH_LABEL[type], timestamp, reason, submittedAt);
 
-         sendJSON(res, 200, {
-             ok: true,
-             record: { id, employeeNo, name: dev.emp.name, type, label: PUNCH_LABEL[type], timestamp, reason, status: 'pending_approval' },
-             message: '補登申請已送出，待管理者審核',
-         });
+           sendJSON(res, 200, {
+                 ok: true,
+                 record: { id, employeeNo, name: dev.emp.name, type, label: PUNCH_LABEL[type], timestamp, reason, status: 'pending_approval' },
+                 message: '補登石請已送出，待管理者審核',
+           });
 });
 
 function rowToRecord(r) {
     return {
-        id: r.id, employeeNo: r.employee_no, name: r.name, type: r.type, label: r.label,
-        timestamp: r.timestamp, verifiedBy: r.verified_by, verifyDetail: r.verify_detail,
-        distanceKm: r.distance_km, reason: r.reason, status: r.status,
-        submittedAt: r.submitted_at, reviewedAt: r.reviewed_at,
-        locationSuspicious: !!r.location_suspicious,
+          id: r.id, employeeNo: r.employee_no, name: r.name, type: r.type, label: r.label,
+          timestamp: r.timestamp, verifiedBy: r.verified_by, verifyDetail: r.verify_detail,
+          distanceKm: r.distance_km, reason: r.reason, status: r.status,
+          submittedAt: r.submitted_at, reviewedAt: r.reviewed_at,
+          locationSuspicious: !!r.location_suspicious,
     };
 }
 
@@ -261,10 +287,10 @@ addRoute('GET', '/api/history', async (req, res, params, query) => {
 addRoute('GET', '/api/status', async (req, res, params, query) => {
     const { employeeNo } = query;
     const rows = db
-    .prepare(
-        "SELECT * FROM punches WHERE employee_no = ? AND status = 'confirmed' AND timestamp LIKE ? ORDER BY timestamp ASC"
-        )
-    .all(employeeNo, todayStr() + '%');
+      .prepare(
+              "SELECT * FROM punches WHERE employee_no = ? AND status = 'confirmed' AND timestamp LIKE ? ORDER BY timestamp ASC"
+            )
+      .all(employeeNo, todayStr() + '%');
     const last = rows[rows.length - 1];
     sendJSON(res, 200, { ok: true, lastType: last ? last.type : null, lastAt: last ? last.timestamp : null });
 });
@@ -272,15 +298,15 @@ addRoute('GET', '/api/status', async (req, res, params, query) => {
 addRoute('POST', '/api/admin/login', async (req, res) => {
     const ip = getClientIp(req);
     if (auth.isLockedOut(ip)) {
-        return sendJSON(res, 429, { error: '登入失敗次數過多，請 1 分鐘後再試' });
+          return sendJSON(res, 429, { error: '登入失敗次數過多，請 1 分鐘後再試' });
     }
     const { username, password } = await readBody(req);
-    if (!username || !password) return sendJSON(res, 400, { error: '請輸入帳號密碼' });
+    if (!username || !password) return sendJSON(res, 400, { error: '請輸入帳�陟密碼' });
 
-         const user = auth.verifyPassword(username, password);
+           const user = auth.verifyPassword(username, password);
     if (!user) {
-        auth.recordFailedAttempt(ip);
-        return sendJSON(res, 401, { error: '帳號或密碼錯誤' });
+          auth.recordFailedAttempt(ip);
+          return sendJSON(res, 401, { error: '帳號或密碼錯誤' });
     }
     auth.clearFailedAttempts(ip);
     const { token, expiresAt } = auth.createSession(username);
@@ -306,7 +332,7 @@ addRoute('POST', '/api/admin/change-password', async (req, res) => {
     if (!session) return;
     const { currentPassword, newPassword } = await readBody(req);
     if (!newPassword || newPassword.length < 8) {
-        return sendJSON(res, 400, { error: '新密碼至少需要 8 碼' });
+          return sendJSON(res, 400, { error: '新密碼至少需要 8 碼' });
     }
     const ok = auth.verifyPassword(session.username, currentPassword || '');
     if (!ok) return sendJSON(res, 401, { error: '目前密碼不正確' });
@@ -324,10 +350,10 @@ addRoute('POST', '/api/admin/config', async (req, res) => {
     const { lat, lng, radiusKm, allowedIPs } = await readBody(req);
     const current = db.prepare('SELECT * FROM admin_config WHERE id = 1').get();
     db.prepare('UPDATE admin_config SET lat=?, lng=?, radius_km=?, allowed_ips=? WHERE id=1').run(
-        typeof lat === 'number' ? lat : current.lat,
-        typeof lng === 'number' ? lng : current.lng,
-        typeof radiusKm === 'number' ? radiusKm : current.radius_km,
-        Array.isArray(allowedIPs) ? JSON.stringify(allowedIPs) : current.allowed_ips
+          typeof lat === 'number' ? lat : current.lat,
+          typeof lng === 'number' ? lng : current.lng,
+          typeof radiusKm === 'number' ? radiusKm : current.radius_km,
+          Array.isArray(allowedIPs) ? JSON.stringify(allowedIPs) : current.allowed_ips
         );
     sendJSON(res, 200, { ok: true, config: getAdminConfig() });
 });
@@ -336,8 +362,8 @@ addRoute('GET', '/api/admin/employees', async (req, res) => {
     if (!requireAdmin(req, res)) return;
     const rows = db.prepare('SELECT employee_no, name, device_id, bound_at FROM employees').all();
     sendJSON(res, 200, {
-        ok: true,
-        employees: rows.map((e) => ({ employeeNo: e.employee_no, name: e.name, deviceId: e.device_id, boundAt: e.bound_at })),
+          ok: true,
+          employees: rows.map((e) => ({ employeeNo: e.employee_no, name: e.name, deviceId: e.device_id, boundAt: e.bound_at })),
     });
 });
 
@@ -353,8 +379,8 @@ addRoute('GET', '/api/admin/forgot-requests', async (req, res, params, query) =>
     if (!requireAdmin(req, res)) return;
     const status = query.status || 'pending_approval';
     const rows = db
-    .prepare("SELECT * FROM punches WHERE verified_by = 'manual_request' AND status = ?")
-    .all(status);
+      .prepare("SELECT * FROM punches WHERE verified_by = 'manual_request' AND status = ?")
+      .all(status);
     sendJSON(res, 200, { ok: true, records: rows.map(rowToRecord) });
 });
 
@@ -379,47 +405,48 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
     if (!requireAdmin(req, res)) return;
     const { employeeNo, from, to, status } = await readBody(req);
 
-         let sql = 'SELECT * FROM punches WHERE 1=1';
+    let sql = 'SELECT * FROM punches WHERE 1=1';
     const args = [];
     if (employeeNo) { sql += ' AND employee_no = ?'; args.push(employeeNo); }
     if (from) { sql += ' AND timestamp >= ?'; args.push(from); }
     if (to) { sql += ' AND timestamp <= ?'; args.push(to + 'T23:59:59'); }
     if (status) {
-        sql += ' AND status = ?'; args.push(status);
+          sql += ' AND status = ?'; args.push(status);
     } else {
-        sql += " AND status != 'rejected'";
+          sql += " AND status != 'rejected'";
     }
     sql += ' ORDER BY timestamp ASC';
     const rows = db.prepare(sql).all(...args);
 
-         if (!rows.length) {
-             return sendJSON(res, 200, { ok: true, exported: 0, message: '沒有符合篩選條件的打卡紀錄' });
-         }
-
-         const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-    const sheetName = process.env.GOOGLE_SHEET_TAB || '打卡記錄';
-    if (!spreadsheetId) {
-        return sendJSON(res, 500, { error: '伺服器尚未設定 GOOGLE_SHEET_ID 環境變數' });
+    if (!rows.length) {
+          return sendJSON(res, 200, { ok: true, exported: 0, message: '沖有符合篩選条件的打卡紀錄' });
     }
 
-         try {
-             await sheetsApi.ensureHeader(spreadsheetId, sheetName, SHEET_EXPORT_HEADER);
-             const exportedAt = new Date().toISOString();
-             const values = rows.map((r) => [
-                 r.employee_no,
-                 r.name,
-                 PUNCH_LABEL[r.type] || r.type,
-                 r.timestamp,
-                 STATUS_LABEL[r.status] || r.status,
-                 VERIFY_LABEL[r.verified_by] || r.verified_by || '',
-                 r.verify_detail || r.reason || '',
-                 exportedAt,
-                 ]);
-             await sheetsApi.appendRows(spreadsheetId, sheetName, values);
-             sendJSON(res, 200, { ok: true, exported: rows.length, message: `已匯出 ${rows.length} 筆打卡紀錄到 Google Sheet「${sheetName}」分頁` });
-         } catch (e) {
-             sendJSON(res, 500, { error: '匯出到 Google Sheet 失敗：' + e.message });
-         }
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+    const sheetName = process.env.GOOGLE_SHEET_TAB || '打卡記錄';
+    if (!spreadsheetId) {
+          return sendJSON(res, 500, { error: '伺服器尚未设定 GOOGLE_SHEET_ID 環境變數' });
+    }
+
+    try {
+          await sheetsApi.ensureHeader(spreadsheetId, sheetName, SHEET_EXPORT_HEADER);
+          const exportedAt = new Date().toISOString();
+          const values = rows.map((r) => [
+                r.employee_no,
+                r.name,
+                PUNCH_LABEL[r.type] || r.type,
+                computeScheduleTime(r.timestamp),
+                r.timestamp,
+                STATUS_LABEL[r.status] || r.status,
+                VERIFY_LABEL[r.verified_by] || r.verified_by || '',
+                r.verify_detail || r.reason || '',
+                exportedAt,
+          ]);
+          await sheetsApi.appendRows(spreadsheetId, sheetName, values);
+          sendJSON(res, 200, { ok: true, exported: rows.length, message: `已匯出 ${rows.length} 筆打卡紀錄到 Google Sheet「${sheetName}」分頁` });
+    } catch (e) {
+          sendJSON(res, 500, { error: '匯出到 Google Sheet 失敗：' + e.message });
+    }
 });
 
 const MIME = {
@@ -434,41 +461,41 @@ function serveStatic(req, res, pathname) {
     let filePath = pathname === '/' ? '/index.html' : pathname;
     filePath = path.normalize(path.join(PUBLIC_DIR, filePath));
     if (!filePath.startsWith(PUBLIC_DIR)) {
-        res.writeHead(403);
-        return res.end('Forbidden');
+          res.writeHead(403);
+          return res.end('Forbidden');
     }
     fs.readFile(filePath, (err, data) => {
-        if (err) {
-            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-            return res.end('Not found');
-        }
-        const ext = path.extname(filePath);
-        res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-        res.end(data);
+          if (err) {
+                  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+                  return res.end('Not found');
+          }
+          const ext = path.extname(filePath);
+          res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+          res.end(data);
     });
 }
 
 const server = http.createServer(async (req, res) => {
     try {
-        const parsed = new URL(req.url, `http://${req.headers.host}`);
-        const pathname = parsed.pathname;
-        const query = Object.fromEntries(parsed.searchParams.entries());
+          const parsed = new URL(req.url, `http://${req.headers.host}`);
+          const pathname = parsed.pathname;
+          const query = Object.fromEntries(parsed.searchParams.entries());
 
-    for (const r of routes) {
-        if (r.method !== req.method) continue;
-        const m = pathname.match(r.pattern);
-        if (!m) continue;
-        const params = {};
-        r.keys.forEach((k, i) => (params[k] = decodeURIComponent(m[i + 1])));
-        return await r.handler(req, res, params, query);
-    }
+      for (const r of routes) {
+              if (r.method !== req.method) continue;
+              const m = pathname.match(r.pattern);
+              if (!m) continue;
+              const params = {};
+              r.keys.forEach((k, i) => (params[k] = decodeURIComponent(m[i + 1])));
+              return await r.handler(req, res, params, query);
+      }
 
-    if (pathname.startsWith('/api/')) {
-        return sendJSON(res, 404, { error: 'API not found' });
-    }
-        serveStatic(req, res, pathname);
+      if (pathname.startsWith('/api/')) {
+              return sendJSON(res, 404, { error: 'API not found' });
+      }
+          serveStatic(req, res, pathname);
     } catch (e) {
-        sendJSON(res, 500, { error: e.message });
+          sendJSON(res, 500, { error: e.message });
     }
 });
 
