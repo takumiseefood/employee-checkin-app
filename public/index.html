@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>員工打卡</title>
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#2f6fed" />
+<meta name="theme-color" content="#0a0d13" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -15,8 +15,9 @@
     <a href="admin.html">管理者後台</a>
   </div>
 
+  <!-- 首次使用：綁定裝置 -->
   <div id="bindCard" class="card hidden">
-    <p style="margin-top:0;color:#666;font-size:13px;">首次使用需綁定裝置，之後此裝置即代表你本人打卡，如需更換裝置請聯繫管理者。</p>
+    <p style="margin-top:0;color:var(--text-muted);font-size:13px;">首次使用需綁定裝置，之後此裝置即代表你本人打卡，如需更換裝置請聯繫管理者。</p>
     <div class="field">
       <label>員工編號</label>
       <input id="bindNo" placeholder="例如 A0012" />
@@ -29,6 +30,7 @@
     <div id="bindMsg" class="msg"></div>
   </div>
 
+  <!-- 打卡主畫面 -->
   <div id="mainCard" class="card hidden">
     <div class="field">
       <label>員工編號</label>
@@ -52,6 +54,7 @@
     <div id="punchMsg" class="msg"></div>
   </div>
 
+  <!-- 忘記打卡表單 -->
   <div id="forgotCard" class="card hidden">
     <h3 style="margin-top:0;">忘記打卡補登申請</h3>
     <div class="field">
@@ -76,6 +79,7 @@
     <div id="forgotMsg" class="msg"></div>
   </div>
 
+  <!-- 查詢打卡記錄 -->
   <div id="historyCard" class="card hidden">
     <div class="topnav">
       <h3 style="margin:0;">查詢打卡記錄</h3>
