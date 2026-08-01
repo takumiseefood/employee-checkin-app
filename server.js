@@ -48,6 +48,18 @@ function pad2(n) {
     return String(n).padStart(2, '0');
 }
 
+// 打卡時間顯示換算：資料庫內儲存的 timestamp 是 UTC ISO 字串，
+// 匯出到 Google Sheet 給人看時，必須換算成公司所在時區（Asia/Taipei, UTC+8）
+// 的實際時間，否則會與「班表時間」欄位相差 8 小時、造成混淆。
+function formatTaipeiDateTime(isoTimestamp) {
+    const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
+    const d = new Date(isoTimestamp);
+    const local = new Date(d.getTime() + TZ_OFFSET_MS);
+    return `${local.getUTCFullYear()}-${pad2(local.getUTCMonth() + 1)}-${pad2(local.getUTCDate())} ${pad2(
+          local.getUTCHours()
+        )}:${pad2(local.getUTCMinutes())}:${pad2(local.getUTCSeconds())}`;
+}
+
 function computeScheduleTime(isoTimestamp) {
     const TZ_OFFSET_MS = 8 * 60 * 60 * 1000; // Asia/Taipei，固定 UTC+8，無日光節約
     const d = new Date(isoTimestamp);
@@ -436,7 +448,7 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
                 r.name,
                 PUNCH_LABEL[r.type] || r.type,
                 computeScheduleTime(r.timestamp),
-                r.timestamp,
+                formatTaipeiDateTime(r.timestamp),
                 STATUS_LABEL[r.status] || r.status,
                 VERIFY_LABEL[r.verified_by] || r.verified_by || '',
                 r.verify_detail || r.reason || '',
