@@ -148,8 +148,8 @@ function addRoute(method, routePath, handler) {
               .split('/')
               .map((seg) => {
                           if (seg.startsWith(':')) {
-                                       keys.push(seg.slice(1));
-                                       return '([^/]+)';
+                                        keys.push(seg.slice(1));
+                                        return '([^/]+)';
                           }
                           return seg;
               })
@@ -206,7 +206,7 @@ addRoute('POST', '/api/bind', async (req, res) => {
            }
 
            if (emp.device_id && emp.device_id !== deviceId) {
-                 return sendJSON(res, 409, { error: '此員工編號已碶帐其他裝置，如需更捛裝置請肯繫管理者重設綁定' });
+                 return sendJSON(res, 409, { error: '此員工編號已綁定其他裝置，如需更換裝置請聯繫管理者重設綁定' });
            }
 
            db.prepare('UPDATE employees SET device_id = ?, name = ? WHERE employee_no = ?').run(deviceId, name, employeeNo);
@@ -242,7 +242,7 @@ addRoute('POST', '/api/punch', async (req, res) => {
 addRoute('POST', '/api/forgot-punch', async (req, res) => {
     const { employeeNo, deviceId, type, time, reason } = await readBody(req);
     if (!PUNCH_TYPES.includes(type)) return sendJSON(res, 400, { error: '不支援的打卡類型' });
-    if (!time || !reason) return sendJSON(res, 400, { error: '請填寫補登時间與原因' });
+    if (!time || !reason) return sendJSON(res, 400, { error: '請填寫補登時間與原因' });
 
            const dev = verifyDevice(employeeNo, deviceId);
     if (!dev.ok) return sendJSON(res, 403, { error: dev.error });
@@ -258,7 +258,7 @@ addRoute('POST', '/api/forgot-punch', async (req, res) => {
            sendJSON(res, 200, {
                  ok: true,
                  record: { id, employeeNo, name: dev.emp.name, type, label: PUNCH_LABEL[type], timestamp, reason, status: 'pending_approval' },
-                 message: '補登石請已送出，待管理者審核',
+                 message: '補登申請已送出，待管理者審核',
            });
 });
 
@@ -289,7 +289,7 @@ addRoute('GET', '/api/status', async (req, res, params, query) => {
     const rows = db
       .prepare(
               "SELECT * FROM punches WHERE employee_no = ? AND status = 'confirmed' AND timestamp LIKE ? ORDER BY timestamp ASC"
-           ")
+            )
       .all(employeeNo, todayStr() + '%');
     const last = rows[rows.length - 1];
     sendJSON(res, 200, { ok: true, lastType: last ? last.type : null, lastAt: last ? last.timestamp : null });
@@ -298,10 +298,10 @@ addRoute('GET', '/api/status', async (req, res, params, query) => {
 addRoute('POST', '/api/admin/login', async (req, res) => {
     const ip = getClientIp(req);
     if (auth.isLockedOut(ip)) {
-          return sendJSON(res, 429, { error: '登入失敗次數過多（請 1 分鐘後再試' });
+          return sendJSON(res, 429, { error: '登入失敗次數過多，請 1 分鐘後再試' });
     }
     const { username, password } = await readBody(req);
-    if (!username || !password) return sendJSON(res, 400, { error: '請輸入帳�陟密碼' });
+    if (!username || !password) return sendJSON(res, 400, { error: '請輸入帳號密碼' });
 
            const user = auth.verifyPassword(username, password);
     if (!user) {
@@ -419,7 +419,7 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
     const rows = db.prepare(sql).all(...args);
 
     if (!rows.length) {
-          return sendJSON(res, 200, { ok: true, exported: 0, message: '沖有符合篩選条件的打卡紀錄' });
+          return sendJSON(res, 200, { ok: true, exported: 0, message: '沒有符合篩選條件的打卡紀錄' });
     }
 
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
@@ -443,9 +443,9 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
                 exportedAt,
           ]);
 
-          // 依員工分區排序：先出無有資料列，與本次新匯出的資料合併後，
-          // 先依「員工編號��後再侞「打卡時間」排序，整段覆庫图韥表，
-          // 讓同一人的打卡記錄集中排列在連續的區塊，方便辨谘。
+          // 依員工分區排序：讀出既有資料列，與本次新匯出的資料合併後，
+          // 先依「員工編號」再依「打卡時間」排序，整段覆寫回試算表，
+          // 讓同一人員的打卡記錄集中排列在連續的區塊，方便辨識。
           const existing = await sheetsApi.getValues(spreadsheetId, `${sheetName}!A2:I`);
           const padRow = (r) => {
                 const row = (r || []).slice(0, 9);
