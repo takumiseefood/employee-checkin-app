@@ -260,7 +260,11 @@ addRoute('POST', '/api/forgot-punch', async (req, res) => {
     if (!dev.ok) return sendJSON(res, 403, { error: dev.error });
 
            const id = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
-    const timestamp = new Date(time).toISOString();
+    // 前端送來的 time 是「不含時區」的手機本地時間字串（例如「2026-08-01T17:00」），
+    // 代表的是公司時區（Asia/Taipei, UTC+8）的牆上時鐘時間，不能直接用 new Date(time)
+    // 解析——若伺服器行程本身跑在 UTC，會被誤判成 UTC 時間，導致補登時間整整差 8 小時。
+    // 明確補上 +08:00 時區位移，確保無論伺服器所在時區為何，換算結果都正確。
+    const timestamp = new Date(`${time}:00+08:00`).toISOString();
     const submittedAt = new Date().toISOString();
     db.prepare(`INSERT INTO punches
         (id, employee_no, name, type, label, timestamp, verified_by, reason, status, submitted_at, location_suspicious)
