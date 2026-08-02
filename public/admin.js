@@ -198,6 +198,10 @@ async function loadEmployees() {
           <td>${e.employeeNo}</td>
           <td>${e.name}</td>
           <td>${e.deviceId ? '已綁定' : '未綁定'}</td>
+          <td>
+            <input type="number" min="0" step="1" style="width:80px;" id="wage-${e.employeeNo}" value="${e.hourlyWage || 0}" />
+            <button class="btn-secondary" onclick="saveWage('${e.employeeNo}')">儲存</button>
+          </td>
           <td>${e.deviceId ? `<button class="btn-secondary" onclick="resetDevice('${e.employeeNo}')">重設綁定</button>` : '-'}</td>
         </tr>`
       )
@@ -211,13 +215,101 @@ async function loadEmployees() {
         .map((e) => `<option value="${e.employeeNo}">${e.name}（${e.employeeNo}）</option>`)
         .join('');
     exportSelect.value = prevValue;
+
+    const payrollSelect = document.getElementById('payrollEmployee');
+    const prevPayrollValue = payrollSelect.value;
+    payrollSelect.innerHTML =
+      '<option value="">全部員工</option>' +
+      data.employees
+        .map((e) => `<option value="${e.employeeNo}">${e.name}（${e.employeeNo}）</option>`)
+        .join('');
+    payrollSelect.value = prevPayrollValue;
   } catch (e) { /* 401 已導回登入頁 */ }
+}
+
+async function saveWage(employeeNo) {
+  const input = document.getElementById(`wage-${employeeNo}`);
+  const hourlyWage = parseFloat(input.value);
+  if (isNaN(hourlyWage) || hourlyWage < 0) {
+    alert('請輸入大於等於 0 的時薪數字');
+    return;
+  }
+  try {
+    const r = await api(`/api/admin/employees/${employeeNo}/wage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hourlyWage }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || '更新失敗');
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
 async function resetDevice(employeeNo) {
   if (!confirm(`確定要重設 ${employeeNo} 的裝置綁定嗎？重設後該員工下次打卡時可綁定新裝置。`)) return;
   await api(`/api/admin/employees/${employeeNo}/reset-device`, { method: 'POST' });
   loadEmployees();
+}
+
+async function runPayroll() {
+  const employeeNo = document.getElementById('payrollEmployee').value;
+  const from = document.getElementById('payrollFrom').value;
+  const to = document.getElementById('payrollTo').value;
+  const msg = document.getElementById('payrollMsg');
+  const table = document.getElementById('payrollTable');
+  const warnings = document.getElementById('payrollWarnings');
+  msg.textContent = '試算中…';
+  msg.className = 'msg';
+  warnings.innerHTML = '';
+  try {
+    const params = new URLSearchParams();
+    if (employeeNo) params.set('employeeNo', employeeNo);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const r = await api(`/api/admin/payroll?${params.toString()}`);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || '試算失敗');
+
+    const tbody = table.querySelector('tbody');
+    if (!data.summary.length) {
+      tbody.innerHTML = '';
+      table.classList.add('hidden');
+      msg.textContent = '此篩選條件下沒有已確認的打卡紀錄';
+      msg.className = 'msg';
+      return;
+    }
+
+    tbody.innerHTML = data.summary
+      .map(
+        (s) => `<tr>
+          <td>${s.employeeNo}</td>
+          <td>${s.name}</td>
+          <td>${s.hourlyWage}</td>
+          <td>${s.normalHours}</td>
+          <td>${s.overtimeHours}</td>
+          <td>${s.totalHours}</td>
+          <td>${s.pay}</td>
+        </tr>`
+      )
+      .join('');
+    table.classList.remove('hidden');
+    msg.textContent = '試算完成';
+    msg.className = 'msg ok';
+
+    const incomplete = data.days.filter((d) => d.incomplete);
+    if (incomplete.length) {
+      warnings.innerHTML =
+        '<p style="font-size:12px;color:var(--text-faint);margin-top:10px;">以下日期缺少完整的上下班打卡，未計入工時：</p>' +
+        incomplete
+          .map((d) => `<div class="record">${d.name}（${d.employeeNo}）— ${d.date}：${d.note}</div>`)
+          .join('');
+    }
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.className = 'msg err';
+  }
 }
 
 async function loadSuspicious() {
