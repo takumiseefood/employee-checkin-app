@@ -151,6 +151,91 @@ const VERIFY_LABEL = {
 
 const SHEET_EXPORT_HEADER = ['員工編號', '姓名', '打卡類型', '班表時間', '打卡時間', '狀態', '驗證方式', '驗證/備註', '匯出時間'];
 
+// 薪資試算規則：以「班表時間」（已依 10/30/60 分規則捨入的整點/半點）為準計算工時，
+// 當日工時超過 8 小時的部分，超過時數以 1.33 倍時薪計算。
+const NORMAL_DAILY_HOURS = 8;
+const OVERTIME_MULTIPLIER = 1.33;
+
+// 將「YYYY-MM-DD HH:MM」格式的班表時間字串轉成可比較大小的 Date（僅用於同一天內的時數相減，
+// 使用 UTC 建構避免受伺服器所在時區影響換算結果）。
+function scheduleTimeToDate(scheduleTimeStr) {
+    const [datePart, timePart] = scheduleTimeStr.split(' ');
+    const [y, m, d] = datePart.split('-').map(Number);
+    const [hh, mm] = (timePart || '0:0').split(':').map(Number);
+    return new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
+}
+
+// 依「員工編號 + 班表日期」把打卡紀錄分組，每組內找出上班/下班班表時間，
+// 以及休息開始/結束的班表時間（休息時間會從工時中扣除），算出當日實際工時，
+// 並拆成「正常工時（最多 8 小時）」與「加班工時（超過 8 小時的部分）」。
+function computeDailyPayroll(rows) {
+    const groups = new Map();
+    for (const r of rows) {
+          const scheduleTime = computeScheduleTime(r.timestamp);
+          const day = scheduleTime.slice(0, 10);
+          const key = `${r.employee_no}__${day}`;
+          if (!groups.has(key)) {
+                groups.set(key, { employeeNo: r.employee_no, name: r.name, date: day, punches: [] });
+          }
+          groups.get(key).punches.push({ type: r.type, scheduleTime, at: scheduleTimeToDate(scheduleTime) });
+    }
+
+    const days = [];
+    for (const g of groups.values()) {
+          g.punches.sort((a, b) => a.at - b.at);
+          const checkIns = g.punches.filter((p) => p.type === 'check-in');
+          const checkOuts = g.punches.filter((p) => p.type === 'check-out');
+          const breakStarts = g.punches.filter((p) => p.type === 'break-start');
+          const breakEnds = g.punches.filter((p) => p.type === 'break-end');
+
+          if (!checkIns.length || !checkOuts.length) {
+                days.push({
+                      employeeNo: g.employeeNo, name: g.name, date: g.date, incomplete: true,
+                      note: !checkIns.length ? '缺上班打卡，無法計入該日工時' : '缺下班打卡，無法計入該日工時',
+                });
+                continue;
+          }
+
+          const checkInAt = checkIns[0].at;
+          const checkOutAt = checkOuts[checkOuts.length - 1].at;
+
+          let breakMs = 0;
+          const remainingStarts = [...breakStarts];
+          for (const be of breakEnds) {
+                const bs = remainingStarts.filter((s) => s.at <= be.at).sort((a, b) => b.at - a.at)[0];
+                if (bs) {
+                      breakMs += be.at - bs.at;
+                      remainingStarts.splice(remainingStarts.indexOf(bs), 1);
+                }
+          }
+
+          let workedMs = checkOutAt - checkInAt - breakMs;
+          if (workedMs < 0) workedMs = 0;
+          const workedHours = workedMs / 3600000;
+          const normalHours = Math.min(workedHours, NORMAL_DAILY_HOURS);
+          const overtimeHours = Math.max(workedHours - NORMAL_DAILY_HOURS, 0);
+
+          days.push({
+                employeeNo: g.employeeNo,
+                name: g.name,
+                date: g.date,
+                checkIn: checkIns[0].scheduleTime,
+                checkOut: checkOuts[checkOuts.length - 1].scheduleTime,
+                breakHours: Math.round((breakMs / 3600000) * 100) / 100,
+                workedHours: Math.round(workedHours * 100) / 100,
+                normalHours: Math.round(normalHours * 100) / 100,
+                overtimeHours: Math.round(overtimeHours * 100) / 100,
+          });
+    }
+
+    days.sort((a, b) =>
+          a.employeeNo === b.employeeNo
+            ? a.date.localeCompare(b.date)
+            : String(a.employeeNo).localeCompare(String(b.employeeNo), undefined, { numeric: true })
+        );
+    return days;
+}
+
 const routes = [];
 function addRoute(method, routePath, handler) {
     const keys = [];
@@ -376,11 +461,87 @@ addRoute('POST', '/api/admin/config', async (req, res) => {
 
 addRoute('GET', '/api/admin/employees', async (req, res) => {
     if (!requireAdmin(req, res)) return;
-    const rows = db.prepare('SELECT employee_no, name, device_id, bound_at FROM employees').all();
+    const rows = db.prepare('SELECT employee_no, name, device_id, bound_at, hourly_wage FROM employees').all();
     sendJSON(res, 200, {
           ok: true,
-          employees: rows.map((e) => ({ employeeNo: e.employee_no, name: e.name, deviceId: e.device_id, boundAt: e.bound_at })),
+          employees: rows.map((e) => ({
+                employeeNo: e.employee_no,
+                name: e.name,
+                deviceId: e.device_id,
+                boundAt: e.bound_at,
+                hourlyWage: e.hourly_wage || 0,
+          })),
     });
+});
+
+addRoute('POST', '/api/admin/employees/:employeeNo/wage', async (req, res, params) => {
+    if (!requireAdmin(req, res)) return;
+    const { hourlyWage } = await readBody(req);
+    if (typeof hourlyWage !== 'number' || !isFinite(hourlyWage) || hourlyWage < 0) {
+          return sendJSON(res, 400, { error: '時薪必須是大於等於 0 的數字' });
+    }
+    const emp = db.prepare('SELECT * FROM employees WHERE employee_no = ?').get(params.employeeNo);
+    if (!emp) return sendJSON(res, 404, { error: '查無此員工' });
+    db.prepare('UPDATE employees SET hourly_wage = ? WHERE employee_no = ?').run(hourlyWage, params.employeeNo);
+    sendJSON(res, 200, { ok: true, message: `${emp.name}（${emp.employee_no}）時薪已更新為 ${hourlyWage}` });
+});
+
+addRoute('GET', '/api/admin/payroll', async (req, res, params, query) => {
+    if (!requireAdmin(req, res)) return;
+    const { employeeNo, from, to } = query;
+
+    let sql = "SELECT * FROM punches WHERE status = 'confirmed'";
+    const args = [];
+    if (employeeNo) { sql += ' AND employee_no = ?'; args.push(employeeNo); }
+    if (from) { sql += ' AND timestamp >= ?'; args.push(from); }
+    if (to) { sql += ' AND timestamp <= ?'; args.push(to + 'T23:59:59'); }
+    sql += ' ORDER BY timestamp ASC';
+    const rows = db.prepare(sql).all(...args);
+
+    const days = computeDailyPayroll(rows);
+
+    const wageRows = db.prepare('SELECT employee_no, hourly_wage FROM employees').all();
+    const wageMap = {};
+    wageRows.forEach((w) => { wageMap[w.employee_no] = w.hourly_wage || 0; });
+
+    const summaryMap = new Map();
+    for (const d of days) {
+          if (!summaryMap.has(d.employeeNo)) {
+                summaryMap.set(d.employeeNo, {
+                      employeeNo: d.employeeNo,
+                      name: d.name,
+                      hourlyWage: wageMap[d.employeeNo] || 0,
+                      normalHours: 0,
+                      overtimeHours: 0,
+                      incompleteDays: 0,
+                });
+          }
+          const s = summaryMap.get(d.employeeNo);
+          if (d.incomplete) {
+                s.incompleteDays += 1;
+                continue;
+          }
+          s.normalHours += d.normalHours;
+          s.overtimeHours += d.overtimeHours;
+    }
+
+    const summary = Array.from(summaryMap.values()).map((s) => {
+          const normalHours = Math.round(s.normalHours * 100) / 100;
+          const overtimeHours = Math.round(s.overtimeHours * 100) / 100;
+          const pay = Math.round(normalHours * s.hourlyWage + overtimeHours * s.hourlyWage * OVERTIME_MULTIPLIER);
+          return {
+                employeeNo: s.employeeNo,
+                name: s.name,
+                hourlyWage: s.hourlyWage,
+                normalHours,
+                overtimeHours,
+                totalHours: Math.round((normalHours + overtimeHours) * 100) / 100,
+                incompleteDays: s.incompleteDays,
+                pay,
+          };
+    });
+
+    sendJSON(res, 200, { ok: true, days, summary });
 });
 
 addRoute('POST', '/api/admin/employees/:employeeNo/reset-device', async (req, res, params) => {
