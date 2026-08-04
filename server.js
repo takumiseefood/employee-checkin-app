@@ -165,67 +165,85 @@ function scheduleTimeToDate(scheduleTimeStr) {
     return new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
 }
 
-// 依「員工編號 + 班表日期」把打卡紀錄分組，每組內找出上班/下班班表時間，
-// 以及休息開始/結束的班表時間（休息時間會從工時中扣除），算出當日實際工時，
-// 並拆成「正常工時（最多 8 小時）」與「加班工時（超過 8 小時的部分）」。
+// 依「員工編號」把打卡紀錄依時間排序後，用「配對上下班」的方式算出每一班的工時，
+// 而不是單純用「班表時間的日期」分組——後者遇到跨午夜的班（例如晚上 10 點上班、
+// 隔天凌晨 1 點下班）會把上班和下班拆到兩個不同日期的分組，導致兩邊都判定成
+// 「當天缺打卡」而無法計算工時。改成配對後，一整班無論是否跨過午夜 12 點，
+// 都會被視為同一班、正確算出工時，並歸屬到「上班」那一天。
+// 休息開始/結束若落在該班的上下班之間，也會從工時中扣除；
+// 該班總工時超過 8 小時的部分，以 1.33 倍計算。
 function computeDailyPayroll(rows) {
-    const groups = new Map();
+    const byEmployee = new Map();
     for (const r of rows) {
           const scheduleTime = computeScheduleTime(r.timestamp);
-          const day = scheduleTime.slice(0, 10);
-          const key = `${r.employee_no}__${day}`;
-          if (!groups.has(key)) {
-                groups.set(key, { employeeNo: r.employee_no, name: r.name, date: day, punches: [] });
+          if (!byEmployee.has(r.employee_no)) {
+                byEmployee.set(r.employee_no, { employeeNo: r.employee_no, name: r.name, punches: [] });
           }
-          groups.get(key).punches.push({ type: r.type, scheduleTime, at: scheduleTimeToDate(scheduleTime) });
+          byEmployee.get(r.employee_no).punches.push({ type: r.type, scheduleTime, at: scheduleTimeToDate(scheduleTime) });
     }
 
-    const days = [];
-    for (const g of groups.values()) {
-          g.punches.sort((a, b) => a.at - b.at);
-          const checkIns = g.punches.filter((p) => p.type === 'check-in');
-          const checkOuts = g.punches.filter((p) => p.type === 'check-out');
-          const breakStarts = g.punches.filter((p) => p.type === 'break-start');
-          const breakEnds = g.punches.filter((p) => p.type === 'break-end');
-
-          if (!checkIns.length || !checkOuts.length) {
-                days.push({
-                      employeeNo: g.employeeNo, name: g.name, date: g.date, incomplete: true,
-                      note: !checkIns.length ? '缺上班打卡，無法計入該日工時' : '缺下班打卡，無法計入該日工時',
-                });
-                continue;
-          }
-
-          const checkInAt = checkIns[0].at;
-          const checkOutAt = checkOuts[checkOuts.length - 1].at;
-
-          let breakMs = 0;
-          const remainingStarts = [...breakStarts];
-          for (const be of breakEnds) {
-                const bs = remainingStarts.filter((s) => s.at <= be.at).sort((a, b) => b.at - a.at)[0];
-                if (bs) {
-                      breakMs += be.at - bs.at;
-                      remainingStarts.splice(remainingStarts.indexOf(bs), 1);
-                }
-          }
-
-          let workedMs = checkOutAt - checkInAt - breakMs;
+    function finishShift(days, emp, shift, checkOut) {
+          let workedMs = checkOut.at - shift.checkIn.at - shift.breakMs;
           if (workedMs < 0) workedMs = 0;
           const workedHours = workedMs / 3600000;
           const normalHours = Math.min(workedHours, NORMAL_DAILY_HOURS);
           const overtimeHours = Math.max(workedHours - NORMAL_DAILY_HOURS, 0);
-
           days.push({
-                employeeNo: g.employeeNo,
-                name: g.name,
-                date: g.date,
-                checkIn: checkIns[0].scheduleTime,
-                checkOut: checkOuts[checkOuts.length - 1].scheduleTime,
-                breakHours: Math.round((breakMs / 3600000) * 100) / 100,
+                employeeNo: emp.employeeNo,
+                name: emp.name,
+                date: shift.checkIn.scheduleTime.slice(0, 10),
+                checkIn: shift.checkIn.scheduleTime,
+                checkOut: checkOut.scheduleTime,
+                breakHours: Math.round((shift.breakMs / 3600000) * 100) / 100,
                 workedHours: Math.round(workedHours * 100) / 100,
                 normalHours: Math.round(normalHours * 100) / 100,
                 overtimeHours: Math.round(overtimeHours * 100) / 100,
           });
+    }
+
+    const days = [];
+    for (const emp of byEmployee.values()) {
+          emp.punches.sort((a, b) => a.at - b.at);
+
+          let openShift = null;
+          for (const p of emp.punches) {
+                if (p.type === 'check-in') {
+                      if (openShift) {
+                            // 上一班還沒打下班卡，又出現新的上班打卡：視為上一班缺下班打卡。
+                            days.push({
+                                  employeeNo: emp.employeeNo, name: emp.name,
+                                  date: openShift.checkIn.scheduleTime.slice(0, 10), incomplete: true,
+                                  note: '缺下班打卡，無法計入該日工時',
+                            });
+                      }
+                      openShift = { checkIn: p, breakStartOpen: null, breakMs: 0 };
+                } else if (p.type === 'break-start') {
+                      if (openShift && !openShift.breakStartOpen) openShift.breakStartOpen = p;
+                } else if (p.type === 'break-end') {
+                      if (openShift && openShift.breakStartOpen) {
+                            openShift.breakMs += p.at - openShift.breakStartOpen.at;
+                            openShift.breakStartOpen = null;
+                      }
+                } else if (p.type === 'check-out') {
+                      if (!openShift) {
+                            days.push({
+                                  employeeNo: emp.employeeNo, name: emp.name,
+                                  date: p.scheduleTime.slice(0, 10), incomplete: true,
+                                  note: '缺上班打卡，無法計入該日工時',
+                            });
+                            continue;
+                      }
+                      finishShift(days, emp, openShift, p);
+                      openShift = null;
+                }
+          }
+          if (openShift) {
+                days.push({
+                      employeeNo: emp.employeeNo, name: emp.name,
+                      date: openShift.checkIn.scheduleTime.slice(0, 10), incomplete: true,
+                      note: '缺下班打卡，無法計入該日工時',
+                });
+          }
     }
 
     days.sort((a, b) =>
