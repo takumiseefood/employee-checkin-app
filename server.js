@@ -728,7 +728,25 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
                 return row;
           };
           const existingRows = ((existing.values || [])).filter((r) => r && r[0]).map(padRow);
-          const merged = existingRows.concat(values.map(padRow));
+
+          // 去除重複：用「員工編號＋打卡類型＋打卡時間」當作同一筆打卡的識別鍵。
+          // 同一筆打卡若被匯出多次（例如重複按到匯出按鈕、篩選範圍重疊、或先前已匯出過
+          // 又再次匯出），新資料會直接覆蓋舊資料列，而不是往下多寫一列，
+          // 避免同一筆紀錄在表格中重複出現。
+          const keyOf = (row) => `${row[0]} ${row[2]} ${row[4]}`;
+          const rowsByKey = new Map(existingRows.map((row) => [keyOf(row), row]));
+          let newCount = 0;
+          let updatedCount = 0;
+          for (const row of values.map(padRow)) {
+                const key = keyOf(row);
+                if (rowsByKey.has(key)) {
+                      updatedCount += 1;
+                } else {
+                      newCount += 1;
+                }
+                rowsByKey.set(key, row);
+          }
+          const merged = Array.from(rowsByKey.values());
           merged.sort((a, b) => {
                 const empCompare = String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true });
                 if (empCompare !== 0) return empCompare;
@@ -739,10 +757,18 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
           const writeRange = `${sheetName}!A2:I${merged.length + 1}`;
           await sheetsApi.updateValues(spreadsheetId, writeRange, merged);
 
+          // 若去重後的資料列比原本少（代表清掉了重複列），把底部多出來的舊列清空，
+          // 避免整段覆寫後在表格尾端留下上一次匯出殘留的舊資料。
+          const previousRowCount = (existing.values || []).length;
+          if (merged.length < previousRowCount) {
+                const clearRange = `${sheetName}!A${merged.length + 2}:I${previousRowCount + 1}`;
+                await sheetsApi.clearValues(spreadsheetId, clearRange);
+          }
+
           sendJSON(res, 200, {
                 ok: true,
                 exported: rows.length,
-                message: `已匯出 ${rows.length} 筆打卡紀錄到 Google Sheet「${sheetName}」分頁，並依員工分區整理排序`,
+                message: `已處理 ${rows.length} 筆打卡紀錄（新增 ${newCount} 筆、更新既有 ${updatedCount} 筆重複紀錄）到 Google Sheet「${sheetName}」分頁，並依員工分區整理排序`,
           });
     } catch (e) {
           sendJSON(res, 500, { error: '匯出到 Google Sheet 失敗：' + e.message });
