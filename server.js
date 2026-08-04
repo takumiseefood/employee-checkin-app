@@ -166,6 +166,33 @@ const VERIFY_LABEL = {
 
 const SHEET_EXPORT_HEADER = ['員工編號', '姓名', '打卡類型', '班表時間', '打卡時間', '狀態', '驗證方式', '驗證/備註', '匯出時間'];
 
+// 匯出到 Google Sheet 時「不同員工以不同底色區分」使用的顏色。
+// 依員工編號做簡單雜湊、固定對應到 8 種顏色其中一種（跟 public/admin.js 的
+// employeeColorClass() 用同一套雜湊公式，色相也大致對應），只是這裡改用適合
+// 白底試算表的淺色版本，背景淺色搭配試算表預設的黑字仍清楚易讀。
+const EMP_COLOR_COUNT = 8;
+const SHEET_EMP_COLORS = [
+    { red: 0.8627, green: 0.9098, blue: 1.0 }, // 0 藍
+    { red: 0.9529, green: 0.9020, blue: 0.7686 }, // 1 金
+    { red: 0.8431, green: 0.9608, blue: 0.8824 }, // 2 綠
+    { red: 0.9882, green: 0.9373, blue: 0.8078 }, // 3 琥珀
+    { red: 0.9843, green: 0.8706, blue: 0.8588 }, // 4 紅
+    { red: 0.9059, green: 0.8745, blue: 0.9882 }, // 5 紫
+    { red: 0.8510, green: 0.9529, blue: 0.9882 }, // 6 青
+    { red: 0.9882, green: 0.8745, blue: 0.9373 }, // 7 粉
+];
+function employeeColorIndex(employeeNo) {
+    const str = String(employeeNo || '');
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+          hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    }
+    return hash % EMP_COLOR_COUNT;
+}
+function sheetEmployeeColor(employeeNo) {
+    return SHEET_EMP_COLORS[employeeColorIndex(employeeNo)];
+}
+
 // 薪資試算規則：以「班表時間」（已依 10/30/60 分規則捨入的整點/半點）為準計算工時，
 // 當日工時超過 8 小時的部分，超過時數以 1.33 倍時薪計算。
 const NORMAL_DAILY_HOURS = 8;
@@ -797,6 +824,43 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
           if (merged.length < previousRowCount) {
                 const clearRange = `${sheetName}!A${merged.length + 2}:J${previousRowCount + 1}`;
                 await sheetsApi.clearValues(spreadsheetId, clearRange);
+          }
+
+          // 不同員工以不同底色區分：merged 已依「員工編號」排序，所以同一位員工
+          // 的資料列必定連續，這裡找出每一段連續區塊，套用該員工對應的固定顏色。
+          // 只上色到 I 欄（SHEET_EXPORT_HEADER 的範圍），J 欄是內部用的 ID、
+          // 不特別標示欄名，保持不上色即可。
+          try {
+                const sheetId = await sheetsApi.getSheetIdByName(spreadsheetId, sheetName);
+                if (sheetId !== null) {
+                      const colorRanges = [];
+                      let blockStart = 0;
+                      for (let i = 1; i <= merged.length; i++) {
+                            const sameAsPrev = i < merged.length && merged[i][0] === merged[blockStart][0];
+                            if (!sameAsPrev) {
+                                  colorRanges.push({
+                                        startRowIndex: blockStart + 1,
+                                        endRowIndex: i + 1,
+                                        startColumnIndex: 0,
+                                        endColumnIndex: SHEET_EXPORT_HEADER.length,
+                                        color: sheetEmployeeColor(merged[blockStart][0]),
+                                  });
+                                  blockStart = i;
+                            }
+                      }
+                      if (merged.length < previousRowCount) {
+                            colorRanges.push({
+                                  startRowIndex: merged.length + 1,
+                                  endRowIndex: previousRowCount + 1,
+                                  startColumnIndex: 0,
+                                  endColumnIndex: SHEET_EXPORT_HEADER.length,
+                                  color: { red: 1, green: 1, blue: 1 },
+                            });
+                      }
+                      await sheetsApi.applyRowBackgroundColors(spreadsheetId, sheetId, colorRanges);
+                }
+          } catch (e) {
+                console.warn('套用員工底色失敗（不影響資料匯出結果）：', e.message);
           }
 
           sendJSON(res, 200, {
