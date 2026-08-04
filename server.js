@@ -80,6 +80,20 @@ function computeScheduleTime(isoTimestamp) {
         )}:${pad2(bucket.getUTCMinutes())}`;
 }
 
+// 將前端「不含時區」的本地時間字串（<input type="datetime-local"> 格式：YYYY-MM-DDTHH:MM）
+// 解析成公司時區（Asia/Taipei, UTC+8）對應的正確 UTC ISO 字串，供寫入 timestamp 欄位使用。
+// 明確補上 +08:00 時區位移，確保無論伺服器所在時區為何，換算結果都正確
+// （避免伺服器跑在 UTC 時，把本地時間誤判成 UTC 時間，導致差 8 小時）。
+function taipeiLocalToISO(localStr) {
+    return new Date(`${localStr}:00+08:00`).toISOString();
+}
+
+// 把 UTC ISO 時間字串換算成台北時間、格式化成 <input type="datetime-local"> 可用的值
+// （YYYY-MM-DDTHH:MM），用於管理者編輯打卡記錄時，先把目前時間帶入輸入框。
+function toDatetimeLocalValue(isoTimestamp) {
+    return formatTaipeiDateTime(isoTimestamp).replace(' ', 'T').slice(0, 16);
+}
+
 function getAdminConfig() {
     const row = db.prepare('SELECT * FROM admin_config WHERE id = 1').get();
     return {
@@ -363,11 +377,7 @@ addRoute('POST', '/api/forgot-punch', async (req, res) => {
     if (!dev.ok) return sendJSON(res, 403, { error: dev.error });
 
            const id = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
-    // 前端送來的 time 是「不含時區」的手機本地時間字串（例如「2026-08-01T17:00」），
-    // 代表的是公司時區（Asia/Taipei, UTC+8）的牆上時鐘時間，不能直接用 new Date(time)
-    // 解析——若伺服器行程本身跑在 UTC，會被誤判成 UTC 時間，導致補登時間整整差 8 小時。
-    // 明確補上 +08:00 時區位移，確保無論伺服器所在時區為何，換算結果都正確。
-    const timestamp = new Date(`${time}:00+08:00`).toISOString();
+    const timestamp = taipeiLocalToISO(time);
     const submittedAt = new Date().toISOString();
     db.prepare(`INSERT INTO punches
         (id, employee_no, name, type, label, timestamp, verified_by, reason, status, submitted_at, location_suspicious)
@@ -384,7 +394,8 @@ addRoute('POST', '/api/forgot-punch', async (req, res) => {
 function rowToRecord(r) {
     return {
           id: r.id, employeeNo: r.employee_no, name: r.name, type: r.type, label: r.label,
-          timestamp: r.timestamp, verifiedBy: r.verified_by, verifyDetail: r.verify_detail,
+          timestamp: r.timestamp, localTime: toDatetimeLocalValue(r.timestamp),
+          verifiedBy: r.verified_by, verifyDetail: r.verify_detail,
           distanceKm: r.distance_km, reason: r.reason, status: r.status,
           submittedAt: r.submitted_at, reviewedAt: r.reviewed_at,
           locationSuspicious: !!r.location_suspicious,
@@ -588,6 +599,75 @@ addRoute('POST', '/api/admin/forgot-requests/:id/:action', async (req, res, para
     const status = action === 'approve' ? 'confirmed' : 'rejected';
     db.prepare('UPDATE punches SET status = ?, reviewed_at = ? WHERE id = ?').run(status, new Date().toISOString(), id);
     sendJSON(res, 200, { ok: true, record: rowToRecord({ ...record, status }) });
+});
+
+// 打卡記錄管理：讓管理者可直接查詢、編輯（類型/時間/狀態）、刪除打卡記錄，
+// 用於修正重複打卡、打錯卡等情況，避免匯出的資料與實際情況不符。
+addRoute('GET', '/api/admin/punches', async (req, res, params, query) => {
+    if (!requireAdmin(req, res)) return;
+    const { employeeNo, from, to, status } = query;
+    let sql = 'SELECT * FROM punches WHERE 1=1';
+    const args = [];
+    if (employeeNo) { sql += ' AND employee_no = ?'; args.push(employeeNo); }
+    if (from) { sql += ' AND timestamp >= ?'; args.push(from); }
+    if (to) { sql += ' AND timestamp <= ?'; args.push(to + 'T23:59:59'); }
+    if (status) { sql += ' AND status = ?'; args.push(status); }
+    sql += ' ORDER BY timestamp DESC LIMIT 300';
+    const rows = db.prepare(sql).all(...args);
+    sendJSON(res, 200, { ok: true, records: rows.map(rowToRecord) });
+});
+
+addRoute('POST', '/api/admin/punches/:id/edit', async (req, res, params) => {
+    if (!requireAdmin(req, res)) return;
+    const record = db.prepare('SELECT * FROM punches WHERE id = ?').get(params.id);
+    if (!record) return sendJSON(res, 404, { error: '查無此打卡紀錄' });
+
+    const { type, localTime, status, note } = await readBody(req);
+    const updates = {};
+
+    if (type !== undefined) {
+          if (!PUNCH_TYPES.includes(type)) return sendJSON(res, 400, { error: '不支援的打卡類型' });
+          updates.type = type;
+          updates.label = PUNCH_LABEL[type];
+    }
+    if (localTime !== undefined) {
+          if (!localTime) return sendJSON(res, 400, { error: '請提供有效的打卡時間' });
+          updates.timestamp = taipeiLocalToISO(localTime);
+    }
+    if (status !== undefined) {
+          if (!['confirmed', 'pending_approval', 'rejected'].includes(status)) {
+                return sendJSON(res, 400, { error: '無效的狀態' });
+          }
+          updates.status = status;
+    }
+    if (note !== undefined) {
+          updates.verify_detail = note;
+    }
+
+    const fields = Object.keys(updates);
+    if (!fields.length) return sendJSON(res, 400, { error: '沒有提供要更新的欄位' });
+
+    updates.reviewed_at = new Date().toISOString();
+    const updateFields = Object.keys(updates);
+    const setClause = updateFields.map((f) => `${f} = ?`).join(', ');
+    db.prepare(`UPDATE punches SET ${setClause} WHERE id = ?`).run(
+          ...updateFields.map((f) => updates[f]),
+          params.id
+        );
+
+    const updated = db.prepare('SELECT * FROM punches WHERE id = ?').get(params.id);
+    sendJSON(res, 200, { ok: true, record: rowToRecord(updated), message: '打卡紀錄已更新' });
+});
+
+addRoute('POST', '/api/admin/punches/:id/delete', async (req, res, params) => {
+    if (!requireAdmin(req, res)) return;
+    const record = db.prepare('SELECT * FROM punches WHERE id = ?').get(params.id);
+    if (!record) return sendJSON(res, 404, { error: '查無此打卡紀錄' });
+    db.prepare('DELETE FROM punches WHERE id = ?').run(params.id);
+    sendJSON(res, 200, {
+          ok: true,
+          message: `已刪除 ${record.name}（${record.employee_no}）的一筆${PUNCH_LABEL[record.type] || record.type}紀錄`,
+    });
 });
 
 addRoute('GET', '/api/admin/suspicious-punches', async (req, res) => {
