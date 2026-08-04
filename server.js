@@ -161,6 +161,7 @@ const VERIFY_LABEL = {
     gps: 'GPS 定位',
     wifi_ip: '公司 WiFi',
     manual_request: '人工補登',
+    admin_manual: '管理者補登',
 };
 
 const SHEET_EXPORT_HEADER = ['員工編號', '姓名', '打卡類型', '班表時間', '打卡時間', '狀態', '驗證方式', '驗證/備註', '匯出時間'];
@@ -601,8 +602,39 @@ addRoute('POST', '/api/admin/forgot-requests/:id/:action', async (req, res, para
     sendJSON(res, 200, { ok: true, record: rowToRecord({ ...record, status }) });
 });
 
-// 打卡記錄管理：讓管理者可直接查詢、編輯（類型/時間/狀態）、刪除打卡記錄，
-// 用於修正重複打卡、打錯卡等情況，避免匯出的資料與實際情況不符。
+// 打卡記錄管理：讓管理者可直接新增、查詢、編輯（類型/時間/狀態）、刪除打卡記錄，
+// 用於補登員工忘記或無法打卡的紀錄、修正重複打卡、打錯卡等情況，
+// 避免匯出的資料與實際情況不符。
+addRoute('POST', '/api/admin/punches', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const { employeeNo, type, localTime, note } = await readBody(req);
+
+    if (!employeeNo) return sendJSON(res, 400, { error: '請選擇員工' });
+    if (!PUNCH_TYPES.includes(type)) return sendJSON(res, 400, { error: '不支援的打卡類型' });
+    if (!localTime) return sendJSON(res, 400, { error: '請填寫打卡時間' });
+
+    const emp = db.prepare('SELECT * FROM employees WHERE employee_no = ?').get(employeeNo);
+    if (!emp) return sendJSON(res, 404, { error: '查無此員工' });
+
+    const id = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    const timestamp = taipeiLocalToISO(localTime);
+    const submittedAt = new Date().toISOString();
+    db.prepare(`INSERT INTO punches
+        (id, employee_no, name, type, label, timestamp, verified_by, verify_detail, status, submitted_at, reviewed_at, location_suspicious)
+            VALUES (?, ?, ?, ?, ?, ?, 'admin_manual', ?, 'confirmed', ?, ?, 0)`
+                 ).run(
+          id, employeeNo, emp.name, type, PUNCH_LABEL[type], timestamp,
+          note || '管理者補登', submittedAt, submittedAt
+        );
+
+    const record = db.prepare('SELECT * FROM punches WHERE id = ?').get(id);
+    sendJSON(res, 200, {
+          ok: true,
+          record: rowToRecord(record),
+          message: `已為 ${emp.name}（${employeeNo}）補登一筆${PUNCH_LABEL[type]}紀錄`,
+    });
+});
+
 addRoute('GET', '/api/admin/punches', async (req, res, params, query) => {
     if (!requireAdmin(req, res)) return;
     const { employeeNo, from, to, status } = query;
