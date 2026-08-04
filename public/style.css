@@ -219,3 +219,41 @@ thead th {
 }
 td { text-align: left; padding: 10px 6px; border-bottom: 1px solid var(--border-soft); color: var(--text); }
 tbody tr:hover { background: var(--card-hover); }
+
+/* 不同員工以不同底色區分：employeeColorClass() 依員工編號雜湊出固定顏色，
+   讓同一位員工在「打卡記錄管理」「薪資試算」「員工與裝置綁定狀態」等表格中
+   顏色一致，方便快速辨識屬於哪位員工，尤其是多位員工紀錄交錯顯示時。 */
+tbody tr[class*="emp-color-"] td:first-child {
+  border-left: 3px solid transparent;
+}
+.emp-color-0 { background: rgba(76, 141, 255, 0.10); }
+.emp-color-0 td:first-child { border-left-color: rgba(76, 141, 255, 0.7); }
+.emp-color-0:hover { background: rgba(76, 141, 255, 0.17); }
+
+.emp-color-1 { background: rgba(201, 169, 97, 0.12); }
+.emp-color-1 td:first-child { border-left-color: rgba(201, 169, 97, 0.75); }
+.emp-color-1:hover { background: rgba(201, 169, 97, 0.19); }
+
+.emp-color-2 { background: rgba(52, 199, 123, 0.10); }
+.emp-color-2 td:first-child { border-left-color: rgba(52, 199, 123, 0.7); }
+.emp-color-2:hover { background: rgba(52, 199, 123, 0.17); }
+
+.emp-color-3 { background: rgba(224, 169, 64, 0.10); }
+.emp-color-3 td:first-child { border-left-color: rgba(224, 169, 64, 0.7); }
+.emp-color-3:hover { background: rgba(224, 169, 64, 0.17); }
+
+.emp-color-4 { background: rgba(242, 100, 90, 0.10); }
+.emp-color-4 td:first-child { border-left-color: rgba(242, 100, 90, 0.7); }
+.emp-color-4:hover { background: rgba(242, 100, 90, 0.17); }
+
+.emp-color-5 { background: rgba(167, 139, 250, 0.10); }
+.emp-color-5 td:first-child { border-left-color: rgba(167, 139, 250, 0.7); }
+.emp-color-5:hover { background: rgba(167, 139, 250, 0.17); }
+
+.emp-color-6 { background: rgba(56, 189, 248, 0.10); }
+.emp-color-6 td:first-child { border-left-color: rgba(56, 189, 248, 0.7); }
+.emp-color-6:hover { background: rgba(56, 189, 248, 0.17); }
+
+.emp-color-7 { background: rgba(244, 114, 182, 0.10); }
+.emp-color-7 td:first-child { border-left-color: rgba(244, 114, 182, 0.7); }
+.emp-color-7:hover { background: rgba(244, 114, 182, 0.17); }

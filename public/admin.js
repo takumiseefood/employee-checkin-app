@@ -3,6 +3,19 @@
 function show(id) { document.getElementById(id).classList.remove('hidden'); }
 function hide(id) { document.getElementById(id).classList.add('hidden'); }
 
+// 不同員工以不同底色區分：依員工編號做簡單雜湊，固定對應到 8 種顏色其中一種，
+// 讓同一位員工在「打卡記錄管理」「薪資試算」「員工與裝置綁定狀態」等表格中顏色一致，
+// 方便在多位員工紀錄交錯顯示時快速辨識。
+const EMP_COLOR_COUNT = 8;
+function employeeColorClass(employeeNo) {
+  const str = String(employeeNo || '');
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  }
+  return `emp-color-${hash % EMP_COLOR_COUNT}`;
+}
+
 async function api(url, opts = {}) {
   const r = await fetch(url, { credentials: 'same-origin', ...opts });
   if (r.status === 401) {
@@ -194,7 +207,7 @@ async function loadEmployees() {
     const tbody = document.querySelector('#empTable tbody');
     tbody.innerHTML = data.employees
       .map(
-        (e) => `<tr>
+        (e) => `<tr class="${employeeColorClass(e.employeeNo)}">
           <td>${e.employeeNo}</td>
           <td>${e.name}</td>
           <td>${e.deviceId ? '已綁定' : '未綁定'}</td>
@@ -355,7 +368,7 @@ async function loadPunches() {
         const statusOptions = PUNCH_STATUS_OPTIONS
           .map((o) => `<option value="${o.value}" ${o.value === rec.status ? 'selected' : ''}>${o.label}</option>`)
           .join('');
-        return `<tr>
+        return `<tr class="${employeeColorClass(rec.employeeNo)}">
           <td>${rec.name}（${rec.employeeNo}）</td>
           <td><select id="punch-type-${rec.id}">${typeOptions}</select></td>
           <td><input type="datetime-local" id="punch-time-${rec.id}" value="${rec.localTime}" style="width:170px;" /></td>
@@ -441,7 +454,7 @@ async function runPayroll() {
 
     tbody.innerHTML = data.summary
       .map(
-        (s) => `<tr>
+        (s) => `<tr class="${employeeColorClass(s.employeeNo)}">
           <td>${s.employeeNo}</td>
           <td>${s.name}</td>
           <td>${s.hourlyWage}</td>
