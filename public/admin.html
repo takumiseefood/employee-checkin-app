@@ -117,6 +117,43 @@
   </div>
 
   <div class="card">
+    <h3 style="margin-top:0;">打卡記錄管理</h3>
+    <p style="font-size:12px;color:var(--text-faint);">
+      可直接修正重複打卡、打錯類型或打錯時間的紀錄，避免匯出/薪資試算的結果與實際情況不符。
+      「時間」欄位以台北時間顯示與輸入。修改或刪除後請視需要重新匯出到 Google Sheet。
+    </p>
+    <div class="field">
+      <label>員工</label>
+      <select id="punchEmployee">
+        <option value="">全部員工</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>起始日期（含當天）</label>
+      <input id="punchFrom" type="date" />
+    </div>
+    <div class="field">
+      <label>結束日期（含當天）</label>
+      <input id="punchTo" type="date" />
+    </div>
+    <div class="field">
+      <label>狀態</label>
+      <select id="punchStatus">
+        <option value="">全部</option>
+        <option value="confirmed">已確認</option>
+        <option value="pending_approval">待審核</option>
+        <option value="rejected">已拒絕</option>
+      </select>
+    </div>
+    <button class="btn-primary" onclick="loadPunches()">查詢</button>
+    <div id="punchMsg" class="msg"></div>
+    <table id="punchTable" class="hidden">
+      <thead><tr><th>員工</th><th>類型</th><th>時間（台北）</th><th>狀態</th><th>備註</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <h3 style="margin-top:0;">員工與裝置綁定狀態</h3>
     <table id="empTable">
       <thead><tr><th>員工編號</th><th>姓名</th><th>裝置綁定</th><th>時薪</th><th>操作</th></tr></thead>

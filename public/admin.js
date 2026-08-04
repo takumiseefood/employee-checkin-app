@@ -224,6 +224,15 @@ async function loadEmployees() {
         .map((e) => `<option value="${e.employeeNo}">${e.name}（${e.employeeNo}）</option>`)
         .join('');
     payrollSelect.value = prevPayrollValue;
+
+    const punchSelect = document.getElementById('punchEmployee');
+    const prevPunchValue = punchSelect.value;
+    punchSelect.innerHTML =
+      '<option value="">全部員工</option>' +
+      data.employees
+        .map((e) => `<option value="${e.employeeNo}">${e.name}（${e.employeeNo}）</option>`)
+        .join('');
+    punchSelect.value = prevPunchValue;
   } catch (e) { /* 401 已導回登入頁 */ }
 }
 
@@ -251,6 +260,109 @@ async function resetDevice(employeeNo) {
   if (!confirm(`確定要重設 ${employeeNo} 的裝置綁定嗎？重設後該員工下次打卡時可綁定新裝置。`)) return;
   await api(`/api/admin/employees/${employeeNo}/reset-device`, { method: 'POST' });
   loadEmployees();
+}
+
+const PUNCH_TYPE_OPTIONS = [
+  { value: 'check-in', label: '上班打卡' },
+  { value: 'break-start', label: '休息開始' },
+  { value: 'break-end', label: '休息結束' },
+  { value: 'check-out', label: '下班打卡' },
+];
+const PUNCH_STATUS_OPTIONS = [
+  { value: 'confirmed', label: '已確認' },
+  { value: 'pending_approval', label: '待審核' },
+  { value: 'rejected', label: '已拒絕' },
+];
+
+async function loadPunches() {
+  const employeeNo = document.getElementById('punchEmployee').value;
+  const from = document.getElementById('punchFrom').value;
+  const to = document.getElementById('punchTo').value;
+  const status = document.getElementById('punchStatus').value;
+  const msg = document.getElementById('punchMsg');
+  const table = document.getElementById('punchTable');
+  msg.textContent = '查詢中…';
+  msg.className = 'msg';
+  try {
+    const params = new URLSearchParams();
+    if (employeeNo) params.set('employeeNo', employeeNo);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (status) params.set('status', status);
+    const r = await api(`/api/admin/punches?${params.toString()}`);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || '查詢失敗');
+
+    if (!data.records.length) {
+      table.classList.add('hidden');
+      msg.textContent = '沒有符合篩選條件的打卡紀錄';
+      msg.className = 'msg';
+      return;
+    }
+
+    const tbody = table.querySelector('tbody');
+    tbody.innerHTML = data.records
+      .map((rec) => {
+        const typeOptions = PUNCH_TYPE_OPTIONS
+          .map((o) => `<option value="${o.value}" ${o.value === rec.type ? 'selected' : ''}>${o.label}</option>`)
+          .join('');
+        const statusOptions = PUNCH_STATUS_OPTIONS
+          .map((o) => `<option value="${o.value}" ${o.value === rec.status ? 'selected' : ''}>${o.label}</option>`)
+          .join('');
+        return `<tr>
+          <td>${rec.name}（${rec.employeeNo}）</td>
+          <td><select id="punch-type-${rec.id}">${typeOptions}</select></td>
+          <td><input type="datetime-local" id="punch-time-${rec.id}" value="${rec.localTime}" style="width:170px;" /></td>
+          <td><select id="punch-status-${rec.id}">${statusOptions}</select></td>
+          <td style="max-width:160px;font-size:12px;color:var(--text-faint);">${rec.reason || rec.verifyDetail || ''}</td>
+          <td>
+            <button class="btn-secondary" onclick="savePunchEdit('${rec.id}')">儲存</button>
+            <button class="btn-secondary" onclick="deletePunch('${rec.id}')">刪除</button>
+          </td>
+        </tr>`;
+      })
+      .join('');
+    table.classList.remove('hidden');
+    msg.textContent = `共 ${data.records.length} 筆`;
+    msg.className = 'msg ok';
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.className = 'msg err';
+  }
+}
+
+async function savePunchEdit(id) {
+  const type = document.getElementById(`punch-type-${id}`).value;
+  const localTime = document.getElementById(`punch-time-${id}`).value;
+  const status = document.getElementById(`punch-status-${id}`).value;
+  if (!localTime) {
+    alert('請填寫有效的打卡時間');
+    return;
+  }
+  try {
+    const r = await api(`/api/admin/punches/${id}/edit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, localTime, status }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || '更新失敗');
+    loadPunches();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function deletePunch(id) {
+  if (!confirm('確定要刪除這筆打卡紀錄嗎？此操作無法復原（例如用於移除重複打卡）。')) return;
+  try {
+    const r = await api(`/api/admin/punches/${id}/delete`, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || '刪除失敗');
+    loadPunches();
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
 async function runPayroll() {
