@@ -716,25 +716,27 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
                 VERIFY_LABEL[r.verified_by] || r.verified_by || '',
                 r.verify_detail || r.reason || '',
                 exportedAt,
+                r.id,
           ]);
 
           // 依員工分區排序：讀出既有資料列，與本次新匯出的資料合併後，
           // 先依「員工編號」再依「打卡時間」排序，整段覆寫回試算表，
           // 讓同一人員的打卡記錄集中排列在連續的區塊，方便辨識。
-          const existing = await sheetsApi.getValues(spreadsheetId, `${sheetName}!A2:I`);
+          const existing = await sheetsApi.getValues(spreadsheetId, `${sheetName}!A2:J`);
           const padRow = (r) => {
-                const row = (r || []).slice(0, 9);
-                while (row.length < 9) row.push('');
+                const row = (r || []).slice(0, 10);
+                while (row.length < 10) row.push('');
                 return row;
           };
           const existingRows = ((existing.values || [])).filter((r) => r && r[0]).map(padRow);
 
-          // 去除重複：用「員工編號＋打卡類型＋打卡時間」當作同一筆打卡的識別鍵。
-          // 同一筆打卡若被匯出多次（例如重複按到匯出按鈕、篩選範圍重疊、或先前已匯出過
-          // 又再次匯出），新資料會直接覆蓋舊資料列，而不是往下多寫一列，
-          // 避免同一筆紀錄在表格中重複出現。
-          const keyOf = (row) => `${row[0]} ${row[2]} ${row[4]}`;
-          const rowsByKey = new Map(existingRows.map((row) => [keyOf(row), row]));
+          // 去除重複：最後一欄（J）存放打卡紀錄在資料庫裡的內部 ID，僅供比對同一筆
+          // 打卡使用，不在表格上特別標示欄名。用 ID 當識別鍵，即使該筆打卡的時間
+          // 之後被管理者編輯過，重新匯出時仍能準確對應回同一列、直接覆蓋更新，
+          // 而不是在下面多寫一列造成重複。舊版匯出（尚未有 ID 欄位）的既有列，
+          // 因為沒有 ID 可比對，一律視為獨立資料保留，不會被誤判成重複而合併掉。
+          const keyOf = (row, index) => (row[9] ? `id:${row[9]}` : `legacy:${index}`);
+          const rowsByKey = new Map(existingRows.map((row, index) => [keyOf(row, index), row]));
           let newCount = 0;
           let updatedCount = 0;
           for (const row of values.map(padRow)) {
@@ -754,14 +756,14 @@ addRoute('POST', '/api/admin/export-to-sheet', async (req, res) => {
           });
 
           await sheetsApi.ensureSheetRowCount(spreadsheetId, sheetName, merged.length + 1);
-          const writeRange = `${sheetName}!A2:I${merged.length + 1}`;
+          const writeRange = `${sheetName}!A2:J${merged.length + 1}`;
           await sheetsApi.updateValues(spreadsheetId, writeRange, merged);
 
           // 若去重後的資料列比原本少（代表清掉了重複列），把底部多出來的舊列清空，
           // 避免整段覆寫後在表格尾端留下上一次匯出殘留的舊資料。
           const previousRowCount = (existing.values || []).length;
           if (merged.length < previousRowCount) {
-                const clearRange = `${sheetName}!A${merged.length + 2}:I${previousRowCount + 1}`;
+                const clearRange = `${sheetName}!A${merged.length + 2}:J${previousRowCount + 1}`;
                 await sheetsApi.clearValues(spreadsheetId, clearRange);
           }
 
