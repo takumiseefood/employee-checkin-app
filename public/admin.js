@@ -233,7 +233,53 @@ async function loadEmployees() {
         .map((e) => `<option value="${e.employeeNo}">${e.name}（${e.employeeNo}）</option>`)
         .join('');
     punchSelect.value = prevPunchValue;
+
+    const newPunchSelect = document.getElementById('newPunchEmployee');
+    const prevNewPunchValue = newPunchSelect.value;
+    newPunchSelect.innerHTML =
+      '<option value="">請選擇員工</option>' +
+      data.employees
+        .map((e) => `<option value="${e.employeeNo}">${e.name}（${e.employeeNo}）</option>`)
+        .join('');
+    newPunchSelect.value = prevNewPunchValue;
   } catch (e) { /* 401 已導回登入頁 */ }
+}
+
+async function createPunch() {
+  const employeeNo = document.getElementById('newPunchEmployee').value;
+  const type = document.getElementById('newPunchType').value;
+  const localTime = document.getElementById('newPunchTime').value;
+  const note = document.getElementById('newPunchNote').value.trim();
+  const msg = document.getElementById('newPunchMsg');
+
+  if (!employeeNo) {
+    msg.textContent = '請選擇員工';
+    msg.className = 'msg err';
+    return;
+  }
+  if (!localTime) {
+    msg.textContent = '請填寫打卡時間';
+    msg.className = 'msg err';
+    return;
+  }
+
+  try {
+    const r = await api('/api/admin/punches', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeNo, type, localTime, note: note || undefined }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || '新增失敗');
+    msg.textContent = data.message || '已新增打卡紀錄';
+    msg.className = 'msg ok';
+    document.getElementById('newPunchTime').value = '';
+    document.getElementById('newPunchNote').value = '';
+    loadPunches();
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.className = 'msg err';
+  }
 }
 
 async function saveWage(employeeNo) {

@@ -117,6 +117,39 @@
   </div>
 
   <div class="card">
+    <h3 style="margin-top:0;">管理者補登打卡紀錄</h3>
+    <p style="font-size:12px;color:var(--text-faint);">
+      直接為員工新增一筆打卡紀錄（例如員工忘記帶手機、裝置故障無法自行補登等情況）。
+      新增後狀態自動為「已確認」，不需要員工另外送出忘記打卡申請或管理者審核。
+    </p>
+    <div class="field">
+      <label>員工</label>
+      <select id="newPunchEmployee">
+        <option value="">請選擇員工</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>打卡類型</label>
+      <select id="newPunchType">
+        <option value="check-in">上班打卡</option>
+        <option value="break-start">休息開始</option>
+        <option value="break-end">休息結束</option>
+        <option value="check-out">下班打卡</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>打卡時間（台北時間）</label>
+      <input id="newPunchTime" type="datetime-local" />
+    </div>
+    <div class="field">
+      <label>備註（選填）</label>
+      <input id="newPunchNote" placeholder="例如：手機故障，管理者代為補登" />
+    </div>
+    <button class="btn-primary" onclick="createPunch()">新增打卡紀錄</button>
+    <div id="newPunchMsg" class="msg"></div>
+  </div>
+
+  <div class="card">
     <h3 style="margin-top:0;">打卡記錄管理</h3>
     <p style="font-size:12px;color:var(--text-faint);">
       可直接修正重複打卡、打錯類型或打錯時間的紀錄，避免匯出/薪資試算的結果與實際情況不符。
