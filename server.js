@@ -194,9 +194,9 @@ function sheetEmployeeColor(employeeNo) {
 }
 
 // 薪資試算規則：以「班表時間」（已依 10/30/60 分規則捨入的整點/半點）為準計算工時，
-// 當日工時超過 8 小時的部分，超過時數以 1.33 倍時薪計算。
+// 當日工時超過 8 小時的部分，超過時數以 1.34 倍時薪計算。
 const NORMAL_DAILY_HOURS = 8;
-const OVERTIME_MULTIPLIER = 1.33;
+const OVERTIME_MULTIPLIER = 1.34;
 
 // 將「YYYY-MM-DD HH:MM」格式的班表時間字串轉成可比較大小的 Date（僅用於同一天內的時數相減，
 // 使用 UTC 建構避免受伺服器所在時區影響換算結果）。
@@ -213,7 +213,7 @@ function scheduleTimeToDate(scheduleTimeStr) {
 // 「當天缺打卡」而無法計算工時。改成配對後，一整班無論是否跨過午夜 12 點，
 // 都會被視為同一班、正確算出工時，並歸屬到「上班」那一天。
 // 休息開始/結束若落在該班的上下班之間，也會從工時中扣除；
-// 該班總工時超過 8 小時的部分，以 1.33 倍計算。
+// 該班總工時超過 8 小時的部分，以 1.34 倍計算。
 function computeDailyPayroll(rows) {
     const byEmployee = new Map();
     for (const r of rows) {
