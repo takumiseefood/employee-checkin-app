@@ -461,6 +461,7 @@ async function runPayroll() {
           <td>${s.normalHours}</td>
           <td>${s.overtimeHours}</td>
           <td>${s.totalHours}</td>
+          <td>${s.mealFee}</td>
           <td>${s.pay}</td>
         </tr>`
       )

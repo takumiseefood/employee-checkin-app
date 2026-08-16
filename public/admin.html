@@ -198,7 +198,8 @@
     <h3 style="margin-top:0;">薪資試算</h3>
     <p style="font-size:12px;color:var(--text-faint);">
       以「班表時間」（已依規則捨入的整點/半點）計算每日工時：下班班表時間－上班班表時間－休息時段，
-      當日工時超過 8 小時的部分以 1.34 倍時薪計算。請先在下方「員工與裝置綁定狀態」設定各員工時薪。
+      當日工時超過 8 小時的部分以 1.34 倍時薪計算，當日工時滿 5 小時另補貼餐費 80 元。
+      請先在下方「員工與裝置綁定狀態」設定各員工時薪。
     </p>
     <div class="field">
       <label>員工</label>
@@ -217,7 +218,7 @@
     <button class="btn-primary" onclick="runPayroll()">試算薪資</button>
     <div id="payrollMsg" class="msg"></div>
     <table id="payrollTable" class="hidden">
-      <thead><tr><th>員工編號</th><th>姓名</th><th>時薪</th><th>正常工時</th><th>加班工時（1.34倍）</th><th>總工時</th><th>應付薪資</th></tr></thead>
+      <thead><tr><th>員工編號</th><th>姓名</th><th>時薪</th><th>正常工時</th><th>加班工時（1.34倍）</th><th>總工時</th><th>餐費</th><th>應付薪資</th></tr></thead>
       <tbody></tbody>
     </table>
     <div id="payrollWarnings"></div>
