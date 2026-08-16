@@ -195,8 +195,11 @@ function sheetEmployeeColor(employeeNo) {
 
 // 薪資試算規則：以「班表時間」（已依 10/30/60 分規則捨入的整點/半點）為準計算工時，
 // 當日工時超過 8 小時的部分，超過時數以 1.34 倍時薪計算。
+// 當日工時滿 5 小時，補貼餐費（固定金額，不隨時薪變動）。
 const NORMAL_DAILY_HOURS = 8;
 const OVERTIME_MULTIPLIER = 1.34;
+const MEAL_FEE_MIN_HOURS = 5;
+const MEAL_FEE_AMOUNT = 80;
 
 // 將「YYYY-MM-DD HH:MM」格式的班表時間字串轉成可比較大小的 Date（僅用於同一天內的時數相減，
 // 使用 UTC 建構避免受伺服器所在時區影響換算結果）。
@@ -224,29 +227,15 @@ function computeDailyPayroll(rows) {
           byEmployee.get(r.employee_no).punches.push({ type: r.type, scheduleTime, at: scheduleTimeToDate(scheduleTime) });
     }
 
-    function finishShift(days, emp, shift, checkOut) {
-          let workedMs = checkOut.at - shift.checkIn.at - shift.breakMs;
-          if (workedMs < 0) workedMs = 0;
-          const workedHours = workedMs / 3600000;
-          const normalHours = Math.min(workedHours, NORMAL_DAILY_HOURS);
-          const overtimeHours = Math.max(workedHours - NORMAL_DAILY_HOURS, 0);
-          days.push({
-                employeeNo: emp.employeeNo,
-                name: emp.name,
-                date: shift.checkIn.scheduleTime.slice(0, 10),
-                checkIn: shift.checkIn.scheduleTime,
-                checkOut: checkOut.scheduleTime,
-                breakHours: Math.round((shift.breakMs / 3600000) * 100) / 100,
-                workedHours: Math.round(workedHours * 100) / 100,
-                normalHours: Math.round(normalHours * 100) / 100,
-                overtimeHours: Math.round(overtimeHours * 100) / 100,
-          });
-    }
-
     const days = [];
     for (const emp of byEmployee.values()) {
           emp.punches.sort((a, b) => a.at - b.at);
 
+          // 第一步：把打卡配對成一段一段的「班」。同一天可能有兩段班（例如中午一段、
+          // 晚上一段，中間沒打卡代表真的離開過，不是休息），先各自算出工時，
+          // 第二步再依日期加總，套用「當日超過 8 小時算加班」「當日滿 5 小時補餐費」
+          // 這兩條以「當天總工時」為準的規則，避免兩段班分開看都不滿 8 / 5 小時而漏算。
+          const shifts = [];
           let openShift = null;
           for (const p of emp.punches) {
                 if (p.type === 'check-in') {
@@ -275,7 +264,15 @@ function computeDailyPayroll(rows) {
                             });
                             continue;
                       }
-                      finishShift(days, emp, openShift, p);
+                      let workedMs = p.at - openShift.checkIn.at - openShift.breakMs;
+                      if (workedMs < 0) workedMs = 0;
+                      shifts.push({
+                            date: openShift.checkIn.scheduleTime.slice(0, 10),
+                            checkIn: openShift.checkIn.scheduleTime,
+                            checkOut: p.scheduleTime,
+                            breakHours: openShift.breakMs / 3600000,
+                            workedHours: workedMs / 3600000,
+                      });
                       openShift = null;
                 }
           }
@@ -284,6 +281,31 @@ function computeDailyPayroll(rows) {
                       employeeNo: emp.employeeNo, name: emp.name,
                       date: openShift.checkIn.scheduleTime.slice(0, 10), incomplete: true,
                       note: '缺下班打卡，無法計入該日工時',
+                });
+          }
+
+          // 第二步：同一天的所有完整班次加總工時，再套用當日的加班／餐費規則。
+          const byDate = new Map();
+          for (const s of shifts) {
+                if (!byDate.has(s.date)) byDate.set(s.date, []);
+                byDate.get(s.date).push(s);
+          }
+          for (const [date, dayShifts] of byDate.entries()) {
+                const totalWorkedHours = dayShifts.reduce((sum, s) => sum + s.workedHours, 0);
+                const totalBreakHours = dayShifts.reduce((sum, s) => sum + s.breakHours, 0);
+                const normalHours = Math.min(totalWorkedHours, NORMAL_DAILY_HOURS);
+                const overtimeHours = Math.max(totalWorkedHours - NORMAL_DAILY_HOURS, 0);
+                const mealFee = totalWorkedHours >= MEAL_FEE_MIN_HOURS ? MEAL_FEE_AMOUNT : 0;
+                days.push({
+                      employeeNo: emp.employeeNo,
+                      name: emp.name,
+                      date,
+                      shifts: dayShifts.map((s) => ({ checkIn: s.checkIn, checkOut: s.checkOut })),
+                      breakHours: Math.round(totalBreakHours * 100) / 100,
+                      workedHours: Math.round(totalWorkedHours * 100) / 100,
+                      normalHours: Math.round(normalHours * 100) / 100,
+                      overtimeHours: Math.round(overtimeHours * 100) / 100,
+                      mealFee,
                 });
           }
     }
@@ -570,6 +592,7 @@ addRoute('GET', '/api/admin/payroll', async (req, res, params, query) => {
                       hourlyWage: wageMap[d.employeeNo] || 0,
                       normalHours: 0,
                       overtimeHours: 0,
+                      mealFee: 0,
                       incompleteDays: 0,
                 });
           }
@@ -580,18 +603,21 @@ addRoute('GET', '/api/admin/payroll', async (req, res, params, query) => {
           }
           s.normalHours += d.normalHours;
           s.overtimeHours += d.overtimeHours;
+          s.mealFee += d.mealFee;
     }
 
     const summary = Array.from(summaryMap.values()).map((s) => {
           const normalHours = Math.round(s.normalHours * 100) / 100;
           const overtimeHours = Math.round(s.overtimeHours * 100) / 100;
-          const pay = Math.round(normalHours * s.hourlyWage + overtimeHours * s.hourlyWage * OVERTIME_MULTIPLIER);
+          const mealFee = Math.round(s.mealFee);
+          const pay = Math.round(normalHours * s.hourlyWage + overtimeHours * s.hourlyWage * OVERTIME_MULTIPLIER) + mealFee;
           return {
                 employeeNo: s.employeeNo,
                 name: s.name,
                 hourlyWage: s.hourlyWage,
                 normalHours,
                 overtimeHours,
+                mealFee,
                 totalHours: Math.round((normalHours + overtimeHours) * 100) / 100,
                 incompleteDays: s.incompleteDays,
                 pay,
