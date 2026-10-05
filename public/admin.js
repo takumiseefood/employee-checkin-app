@@ -215,7 +215,10 @@ async function loadEmployees() {
             <input type="number" min="0" step="1" style="width:80px;" id="wage-${e.employeeNo}" value="${e.hourlyWage || 0}" />
             <button class="btn-secondary" onclick="saveWage('${e.employeeNo}')">儲存</button>
           </td>
-          <td>${e.deviceId ? `<button class="btn-secondary" onclick="resetDevice('${e.employeeNo}')">重設綁定</button>` : '-'}</td>
+          <td>
+            <button class="btn-secondary" onclick="renumberEmployee('${e.employeeNo}', '${(e.name || '').replace(/'/g, "\\'")}')">變更編號</button>
+            ${e.deviceId ? `<button class="btn-secondary" onclick="resetDevice('${e.employeeNo}')">重設綁定</button>` : ''}
+          </td>
         </tr>`
       )
       .join('');
@@ -310,6 +313,28 @@ async function saveWage(employeeNo) {
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || '更新失敗');
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+// 變更員工編號：彈出輸入框讓管理者輸入新編號，呼叫後端一次把該員工資料
+// 與既有打卡紀錄的員工編號一起改掉，改完重新整理員工列表。
+async function renumberEmployee(employeeNo, name) {
+  const newNo = prompt(`請輸入 ${name}（目前編號 ${employeeNo}）的新員工編號：`, employeeNo);
+  if (newNo === null) return;
+  const trimmed = newNo.trim();
+  if (!trimmed || trimmed === employeeNo) return;
+  try {
+    const r = await api(`/api/admin/employees/${employeeNo}/renumber`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newEmployeeNo: trimmed }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || '變更失敗');
+    alert(data.message || '員工編號已變更');
+    loadEmployees();
   } catch (e) {
     alert(e.message);
   }
