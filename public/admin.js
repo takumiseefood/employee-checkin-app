@@ -16,6 +16,23 @@ function employeeColorClass(employeeNo) {
   return `emp-color-${hash % EMP_COLOR_COUNT}`;
 }
 
+// 打卡時間的顯示格式：固定以公司所在時區（Asia/Taipei）換算並顯示完整的
+// 「年-月-日 時:分:秒」，不依賴管理者瀏覽器本身的系統時區設定，確保不同裝置
+// 看到的時間一致，核對查看時才不會有落差；同時補上秒數，方便分辨同一分鐘內
+// 的多筆打卡先後順序。
+function formatDisplayTime(isoTimestamp) {
+  return new Date(isoTimestamp).toLocaleString('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
 async function api(url, opts = {}) {
   const r = await fetch(url, { credentials: 'same-origin', ...opts });
   if (r.status === 401) {
@@ -181,10 +198,10 @@ async function loadForgotRequests() {
     }
     el.innerHTML = data.records
       .map((rec) => {
-        const t = new Date(rec.timestamp).toLocaleString('zh-TW', { hour12: false });
+        const t = formatDisplayTime(rec.timestamp);
         return `<div class="record">
           <strong>${rec.name}（${rec.employeeNo}）</strong> — ${rec.label}
-          <div class="t">補登時間：${t}　原因：${rec.reason}</div>
+          <div class="t">補登時間：${t}（台北時間）　原因：${rec.reason}</div>
           <div style="margin-top:6px;">
             <button class="btn-secondary" onclick="reviewForgot('${rec.id}','approve')">核准</button>
             <button class="btn-secondary" onclick="reviewForgot('${rec.id}','reject')">拒絕</button>
@@ -520,8 +537,8 @@ async function loadSuspicious() {
     }
     el.innerHTML = data.records
       .map((rec) => {
-        const t = new Date(rec.timestamp).toLocaleString('zh-TW', { hour12: false });
-        return `<div class="record"><strong>${rec.name}（${rec.employeeNo}）</strong> — ${rec.label}<div class="t">${t}</div></div>`;
+        const t = formatDisplayTime(rec.timestamp);
+        return `<div class="record"><strong>${rec.name}（${rec.employeeNo}）</strong> — ${rec.label}<div class="t">${t}（台北時間）</div></div>`;
       })
       .join('');
   } catch (e) { /* 401 已導回登入頁 */ }

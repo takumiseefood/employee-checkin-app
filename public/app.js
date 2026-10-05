@@ -198,6 +198,25 @@ function statusBadge(rec) {
   return '';
 }
 
+// 打卡時間的顯示格式：固定以公司所在時區（Asia/Taipei）換算並顯示完整的
+// 「年-月-日 時:分:秒」，不依賴員工手機/瀏覽器自己的系統時區設定。
+// 原本用 toLocaleString('zh-TW', { hour12:false }) 沒有指定 timeZone，
+// 若員工裝置的系統時區不是台北（例如出國、裝置設定錯誤），顯示出來的
+// 打卡時間就會跟實際台北時間不一致，不利於核對查看；也統一加上秒數，
+// 避免同一分鐘內有兩筆打卡時難以分辨先後順序。
+function formatDisplayTime(isoTimestamp) {
+  return new Date(isoTimestamp).toLocaleString('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
 async function loadHistory() {
   const employeeNo = localStorage.getItem(LS_EMPNO);
   if (!employeeNo) return;
@@ -211,8 +230,8 @@ async function loadHistory() {
   list.innerHTML = data.records
     .slice(0, 30)
     .map((rec) => {
-      const t = new Date(rec.timestamp).toLocaleString('zh-TW', { hour12: false });
-      return `<div class="record"><strong>${rec.label}</strong> ${statusBadge(rec)}<div class="t">${t}${rec.reason ? '　原因：' + rec.reason : ''}</div></div>`;
+      const t = formatDisplayTime(rec.timestamp);
+      return `<div class="record"><strong>${rec.label}</strong> ${statusBadge(rec)}<div class="t">${t}（台北時間）${rec.reason ? '　原因：' + rec.reason : ''}</div></div>`;
     })
     .join('');
 }
