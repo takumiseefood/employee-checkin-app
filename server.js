@@ -565,6 +565,40 @@ addRoute('POST', '/api/admin/employees/:employeeNo/wage', async (req, res, param
     sendJSON(res, 200, { ok: true, message: `${emp.name}（${emp.employee_no}）時薪已更新為 ${hourlyWage}` });
 });
 
+// 變更員工編號：員工編號最初由員工自己在打卡頁輸入綁定，有時會輸錯、
+// 或公司想統一改用新的編號規則，需要管理者事後更正。
+// 因為 employees.employee_no 是 TEXT PRIMARY KEY（不是自動遞增的 rowid 別名），
+// SQLite 允許直接 UPDATE 這個欄位；同時要把 punches 表裡所有該員工的既有
+// 打卡紀錄一併改成新編號，否則舊紀錄會變成查無此員工、薪資試算也會對不起來。
+addRoute('POST', '/api/admin/employees/:employeeNo/renumber', async (req, res, params) => {
+    if (!requireAdmin(req, res)) return;
+    const oldNo = params.employeeNo;
+    const { newEmployeeNo } = await readBody(req);
+    const newNo = typeof newEmployeeNo === 'string' ? newEmployeeNo.trim() : '';
+    if (!newNo) return sendJSON(res, 400, { error: '請輸入新的員工編號' });
+
+    const emp = db.prepare('SELECT * FROM employees WHERE employee_no = ?').get(oldNo);
+    if (!emp) return sendJSON(res, 404, { error: '查無此員工' });
+
+    if (newNo === oldNo) {
+          return sendJSON(res, 200, { ok: true, message: '員工編號未變更' });
+    }
+
+    const conflict = db.prepare('SELECT 1 FROM employees WHERE employee_no = ?').get(newNo);
+    if (conflict) {
+          return sendJSON(res, 409, { error: `員工編號 ${newNo} 已被使用，請換一個編號` });
+    }
+
+    db.prepare('UPDATE employees SET employee_no = ? WHERE employee_no = ?').run(newNo, oldNo);
+    db.prepare('UPDATE punches SET employee_no = ? WHERE employee_no = ?').run(newNo, oldNo);
+
+    sendJSON(res, 200, {
+          ok: true,
+          message: `${emp.name} 的員工編號已從 ${oldNo} 變更為 ${newNo}`,
+          employee: { employeeNo: newNo, name: emp.name },
+    });
+});
+
 addRoute('GET', '/api/admin/payroll', async (req, res, params, query) => {
     if (!requireAdmin(req, res)) return;
     const { employeeNo, from, to } = query;
