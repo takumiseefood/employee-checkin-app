@@ -392,12 +392,29 @@ addRoute('POST', '/api/bind', async (req, res) => {
     sendJSON(res, 200, { ok: true, employee: { employeeNo, name, deviceId }, message: '裝置已確認綁定' });
 });
 
+// 防止重複打卡：同一員工、同一種打卡類型，若 10 分鐘內已經有一筆紀錄，
+// 視為重複點擊（常見於網路延遲時使用者重複按同一顆按鈕、或手滑連點兩下），
+// 直接拒絕，避免同一次上下班動作被記成兩筆幾乎同時間的紀錄，影響工時與薪資試算。
+const DUP_PUNCH_WINDOW_MS = 10 * 60 * 1000;
+function isDuplicatePunch(employeeNo, type) {
+    const recent = db
+      .prepare('SELECT timestamp FROM punches WHERE employee_no = ? AND type = ? ORDER BY timestamp DESC LIMIT 1')
+      .get(employeeNo, type);
+    if (!recent) return false;
+    const diffMs = Date.now() - new Date(recent.timestamp).getTime();
+    return diffMs >= 0 && diffMs < DUP_PUNCH_WINDOW_MS;
+}
+
 addRoute('POST', '/api/punch', async (req, res) => {
     const { employeeNo, deviceId, type, lat, lng, accuracy } = await readBody(req);
     if (!PUNCH_TYPES.includes(type)) return sendJSON(res, 400, { error: '不支援的打卡類型' });
 
            const dev = verifyDevice(employeeNo, deviceId);
     if (!dev.ok) return sendJSON(res, 403, { error: dev.error });
+
+           if (isDuplicatePunch(employeeNo, type)) {
+                 return sendJSON(res, 409, { error: '已重複打卡' });
+           }
 
            const verify = verifyLocationOrNetwork(req, lat, lng, accuracy);
     if (!verify.ok) return sendJSON(res, 403, { error: verify.error });
